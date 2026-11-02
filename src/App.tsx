@@ -3,23 +3,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { TopBar } from './components/TopBar';
+import { Nexus7CommandCenter } from './components/Nexus7CommandCenter';
 import { SpatialPatternObservatory3D } from './components/SpatialPatternObservatory3D';
 import { SubstackFeedPanel } from './components/SubstackFeedPanel';
 import { ExecutiveSummarySection } from './components/ExecutiveSummarySection';
 import { PillarMatrixSection } from './components/PillarMatrixSection';
 import { DotConnectingSection } from './components/DotConnectingSection';
+import { BioscienceWorkbenchSection } from './components/BioscienceWorkbenchSection';
 import { MasterVerdictSection } from './components/MasterVerdictSection';
+import { PWAInstallControl } from './components/PWAInstallControl';
 import {
   CURATED_BRIEFINGS,
-  IntelligenceBriefing,
+  type IntelligenceBriefing,
   PillarId,
   generateDeterministicBriefing,
 } from './utils/intelligenceEngine';
 import {
   FEATURED_SUBSTACK_DISPATCHES,
-  SubstackArticle,
+  type SubstackArticle,
   convertSubstackArticleToBriefing,
 } from './utils/substackParser';
 
@@ -27,6 +30,18 @@ export default function App() {
   const [editions, setEditions] = useState<IntelligenceBriefing[]>(CURATED_BRIEFINGS);
   const [activeEditionId, setActiveEditionId] = useState<string>(CURATED_BRIEFINGS[0].editionId);
   const [selectedPillar, setSelectedPillar] = useState<PillarId | 'ALL'>('ALL');
+
+  // Daily Auto-Update State
+  const [dailyDateKey, setDailyDateKey] = useState<string>(() =>
+    new Date().toISOString().slice(0, 10)
+  );
+  const [lastDailySyncIso, setLastDailySyncIso] = useState<string>(() =>
+    new Date().toISOString()
+  );
+  const [dailyGroundingLinks, setDailyGroundingLinks] = useState<
+    { title: string; uri: string }[]
+  >([]);
+  const [isSyncingDaily, setIsSyncingDaily] = useState<boolean>(false);
 
   const [substackArticles, setSubstackArticles] = useState<SubstackArticle[]>(
     FEATURED_SUBSTACK_DISPATCHES
@@ -42,8 +57,50 @@ export default function App() {
   const activeBriefing =
     editions.find((b) => b.editionId === activeEditionId) ?? editions[0];
 
+  const syncDailyBriefing = useCallback(async (targetDateKey?: string, showBanner = false) => {
+    const dateKeyToFetch = targetDateKey || new Date().toISOString().slice(0, 10);
+    setIsSyncingDaily(true);
+    try {
+      const res = await fetch(
+        `/api/intelligence/daily?dateKey=${encodeURIComponent(dateKeyToFetch)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const syncedBriefing: IntelligenceBriefing | undefined = data.briefing;
+        if (syncedBriefing) {
+          setEditions((prev) => {
+            const exists = prev.some((e) => e.editionId === syncedBriefing.editionId);
+            return exists
+              ? prev.map((e) =>
+                  e.editionId === syncedBriefing.editionId ? syncedBriefing : e
+                )
+              : [syncedBriefing, ...prev];
+          });
+          setActiveEditionId(syncedBriefing.editionId);
+        }
+        if (Array.isArray(data.groundingLinks)) {
+          setDailyGroundingLinks(data.groundingLinks);
+        }
+        setDailyDateKey(data.dateKey || dateKeyToFetch);
+        setLastDailySyncIso(data.syncedAt || new Date().toISOString());
+        if (showBanner) {
+          setStatusNotice(
+            `🟢 [SYSTEM STATUS]: Synced daily 6-pillar intelligence briefing for ${dateKeyToFetch}.`
+          );
+        }
+      }
+    } catch {
+      // Keep existing curated briefings active
+    } finally {
+      setIsSyncingDaily(false);
+    }
+  }, []);
+
+  // Initial mount: Sync daily briefing + Substack feed, and set up automatic daily rollover check
   useEffect(() => {
     let cancelled = false;
+    syncDailyBriefing(new Date().toISOString().slice(0, 10), false);
+
     fetch('/api/substack/feed')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -51,13 +108,24 @@ export default function App() {
           setSubstackArticles(data.articles);
         }
       })
-      .catch(() => {
-        // Curated Substack dispatches remain active
+      .catch(() => {});
+
+    // Check every 5 minutes if the date rolled over to a new day so the briefing auto-updates daily
+    const intervalId = window.setInterval(() => {
+      const currentDay = new Date().toISOString().slice(0, 10);
+      setDailyDateKey((prevDay) => {
+        if (prevDay !== currentDay) {
+          syncDailyBriefing(currentDay, true);
+        }
+        return currentDay;
       });
+    }, 5 * 60 * 1000);
+
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
-  }, []);
+  }, [syncDailyBriefing]);
 
   const scrollToSection = (sectionId: string) => {
     if (sectionId === 'top') {
@@ -238,17 +306,18 @@ export default function App() {
         onOpenSynthesizer={() => scrollToSection('custom-synthesizer')}
       />
 
-      {/* Operational Utility Strip */}
+      {/* Operational Utility Strip + PWA Device Installation Control */}
       <div className="bg-[#F3EFE6] border-b border-[#D6CEBE] px-6 lg:px-12 py-2.5 text-xs font-mono-tabular text-[#57534E] flex flex-wrap items-center justify-between gap-4">
         <div>
-          <span>3D SPATIAL INTELLIGENCE DESK &amp; SUBSTACK PATTERN MATRIX</span>
+          <span>NEXUS-7 REAL-TIME COMMAND CENTER &amp; 3D PATTERN MATRIX</span>
           <span aria-hidden="true"> · </span>
           <span>6 PILLARS: AEROSPACE / DEFENCE / GEOPOLITICS / MONEY / TECH / PHYSICS</span>
         </div>
-        <div>
-          <span>TONE: SHARP THUNGLISH &amp; STREET-SMART ANALOGIES</span>
-          <span aria-hidden="true"> · </span>
-          <span>LAYERS: PAST / PRESENT / FUTURE (1–10Y)</span>
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="hidden xl:inline">
+            DAILY AUTO-UPDATE · PAST ➔ PRESENT ➔ FUTURE (1–10Y)
+          </span>
+          <PWAInstallControl />
         </div>
       </div>
 
@@ -270,6 +339,21 @@ export default function App() {
           </div>
         )}
 
+        {/* NEXUS-7 Real-Time Command Center Terminal (System Status, Daily Auto-Sync, Firebase Cloud Vault, Multi-Turn Chat, Search/Maps Grounding, Voice Transcribe, Image & Video Studio) */}
+        <Nexus7CommandCenter
+          activeBriefing={activeBriefing}
+          dailyDateKey={dailyDateKey}
+          lastDailySyncIso={lastDailySyncIso}
+          dailyGroundingLinks={dailyGroundingLinks}
+          isSyncingDaily={isSyncingDaily}
+          onSyncDailyBriefing={() => syncDailyBriefing(undefined, true)}
+          onSelectPillar={(pillar) => {
+            setSelectedPillar(pillar);
+            scrollToSection('pillar-breakdown');
+          }}
+          onSynthesizeSignal={handleSynthesizeCustomSignal}
+        />
+
         {/* Interactive Three.js 3D Spatial Pattern Observatory */}
         <SpatialPatternObservatory3D
           briefing={activeBriefing}
@@ -277,7 +361,33 @@ export default function App() {
           onSelectPillar={setSelectedPillar}
         />
 
-        {/* Substack Intelligence Wire & Live Ingestion */}
+        {/* 1. 🎯 Executive Briefing (The Big Picture in Thunglish) */}
+        <ExecutiveSummarySection
+          briefing={activeBriefing}
+          editions={editions}
+          onSelectEdition={handleSelectEdition}
+          selectedPillar={selectedPillar}
+          onSelectPillar={setSelectedPillar}
+        />
+
+        {/* 2. 🚀 Interactive Pillar Matrix (Aerospace | Defence | Geopolitics | Money | Tech | Physics) */}
+        <PillarMatrixSection
+          pillars={activeBriefing.pillars}
+          selectedPillar={selectedPillar}
+          onSelectPillar={setSelectedPillar}
+        />
+
+        {/* 3. 🔗 The Dot-Connecting Web (How everything links together today) */}
+        <DotConnectingSection
+          connections={activeBriefing.dotConnections}
+          selectedPillar={selectedPillar}
+          onSelectPillar={setSelectedPillar}
+        />
+
+        {/* 4. 🧬 DeepMind & EMBL-EBI Bioscience Intelligence Workbench */}
+        <BioscienceWorkbenchSection />
+
+        {/* 5. 📰 Substack Intelligence Wire & Live Ingestion */}
         <SubstackFeedPanel
           articles={substackArticles}
           activeArticleId={activeSubstackId}
@@ -288,30 +398,7 @@ export default function App() {
           onDecodeCustomSubstackUrl={handleDecodeCustomSubstackUrl}
         />
 
-        {/* 1. Executive Summary (The Big Picture in Thunglish) */}
-        <ExecutiveSummarySection
-          briefing={activeBriefing}
-          editions={editions}
-          onSelectEdition={handleSelectEdition}
-          selectedPillar={selectedPillar}
-          onSelectPillar={setSelectedPillar}
-        />
-
-        {/* 2. Pillar-by-Pillar Breakdown (Aerospace, Defence, Geopolitics, Money, Tech, Physics) */}
-        <PillarMatrixSection
-          pillars={activeBriefing.pillars}
-          selectedPillar={selectedPillar}
-          onSelectPillar={setSelectedPillar}
-        />
-
-        {/* 3. Dot-Connecting Matrix (How Pillar A links to Pillar B & C) */}
-        <DotConnectingSection
-          connections={activeBriefing.dotConnections}
-          selectedPillar={selectedPillar}
-          onSelectPillar={setSelectedPillar}
-        />
-
-        {/* 4. The Master Verdict / Takeaway + Custom Signal Synthesizer */}
+        {/* 6. 🔮 The Master Verdict / Takeaway + Custom Signal Synthesizer */}
         <MasterVerdictSection
           briefing={activeBriefing}
           isSynthesizing={isSynthesizing}
@@ -328,29 +415,29 @@ export default function App() {
         <div className="max-w-[1320px] mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-[#57534E]">
           <div>
             <span className="font-editorial font-bold text-[#1C1917]">
-              VetriCheck Global Intelligence Desk
+              NEXUS-7 // VetriCheck Global Intelligence Terminal
             </span>
             <span aria-hidden="true"> · </span>
-            <span>Multi-Disciplinary 3D Pattern Recognition Archive</span>
+            <span>Daily Auto-Updated 6-Pillar 3D Pattern Recognition Matrix</span>
           </div>
           <div className="flex flex-wrap items-center gap-4">
+            <a href="#nexus7-terminal" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
+              NEXUS-7 Terminal
+            </a>
             <a href="#spatial-observatory" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
               3D Observatory
             </a>
-            <a href="#substack-wire" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
-              Substack Wire
-            </a>
             <a href="#executive-summary" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
-              Executive Summary
+              Executive Briefing
             </a>
             <a href="#pillar-breakdown" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
               Six Pillars
             </a>
             <a href="#dot-matrix" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
-              Dot Matrix
+              Dot-Connecting Web
             </a>
-            <a href="#master-verdict" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
-              Master Verdict
+            <a href="#bioscience-workbench" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
+              Bioscience Lab
             </a>
           </div>
         </div>

@@ -1,11 +1,13 @@
-export enum PillarId {
-  AEROSPACE = 'Aerospace',
-  DEFENCE = 'Defence',
-  GEOPOLITICS = 'Geopolitics',
-  MONEY = 'Money & Economy',
-  TECH = 'Technology',
-  PHYSICS = 'Physics',
-}
+export const PillarId = {
+  AEROSPACE: 'Aerospace',
+  DEFENCE: 'Defence',
+  GEOPOLITICS: 'Geopolitics',
+  MONEY: 'Money & Economy',
+  TECH: 'Technology',
+  PHYSICS: 'Physics',
+} as const;
+
+export type PillarId = (typeof PillarId)[keyof typeof PillarId];
 
 export const ALL_PILLARS: PillarId[] = [
   PillarId.AEROSPACE,

@@ -1,8 +1,8 @@
 import {
-  IntelligenceBriefing,
+  type IntelligenceBriefing,
   PillarId,
   generateDeterministicBriefing,
-} from './intelligenceEngine';
+} from './intelligenceEngine.ts';
 
 export interface SubstackSource {
   id: string;

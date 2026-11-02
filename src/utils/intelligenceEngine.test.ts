@@ -9,7 +9,7 @@ import {
   generateDeterministicBriefing,
   traceCausalChain,
   validateSynthesisInput,
-} from './intelligenceEngine';
+} from './intelligenceEngine.ts';
 import {
   CURATED_SUBSTACK_SOURCES,
   FEATURED_SUBSTACK_DISPATCHES,
@@ -17,7 +17,7 @@ import {
   convertSubstackArticleToBriefing,
   humanizeSubstackInput,
   parseSubstackRssXml,
-} from './substackParser';
+} from './substackParser.ts';
 
 test('CURATED_BRIEFINGS includes all 6 mandatory pillars with Past-Present-Future layers in every edition', () => {
   assert.ok(CURATED_BRIEFINGS.length >= 3, 'Should ship at least 3 complete editions');
@@ -137,3 +137,40 @@ test('parseSubstackRssXml and convertSubstackArticleToBriefing parse Substack XM
   assert.equal(humanized.publicationName, 'Construction Physics (Substack)');
   assert.equal(humanized.author, 'Brian Potter');
 });
+
+import {
+  CURATED_BIOSCIENCE_TARGETS,
+  buildAlphaGenomeVariantLink,
+  classifyPlddtBand,
+} from './scienceEngine.ts';
+
+test('scienceEngine classifies 4-band AlphaFold pLDDT confidence scores and constructs AlphaGenome Atlas deep-links', () => {
+  assert.ok(CURATED_BIOSCIENCE_TARGETS.length >= 4);
+  assert.deepEqual(classifyPlddtBand(94.2), {
+    label: 'Very High (>90)',
+    colorHex: '#0053D6',
+  });
+  assert.deepEqual(classifyPlddtBand(82.0), {
+    label: 'Confident (70-90)',
+    colorHex: '#65CBF3',
+  });
+  assert.deepEqual(classifyPlddtBand(61.5), {
+    label: 'Low (50-70)',
+    colorHex: '#FFDB13',
+  });
+  assert.deepEqual(classifyPlddtBand(38.0), {
+    label: 'Very Low (<50)',
+    colorHex: '#FF7D45',
+  });
+
+  const link = buildAlphaGenomeVariantLink({
+    chrom: '17',
+    pos: 7674220,
+    ref: 'C',
+    alt: 'T',
+  });
+  assert.ok(link.startsWith('https://deepmind.google.com/science/alphagenome/atlas?'));
+  assert.ok(link.includes('chr17%3A7674220%3AC%3ET'));
+  assert.ok(link.includes('m=variant'));
+});
+

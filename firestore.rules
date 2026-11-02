@@ -1,0 +1,155 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidPillar(pillar) {
+      return pillar is string && pillar.size() <= 32 && (
+        pillar == 'ALL' ||
+        pillar == 'Aerospace' ||
+        pillar == 'Defence' ||
+        pillar == 'Geopolitics' ||
+        pillar == 'Money & Economy' ||
+        pillar == 'Technology' ||
+        pillar == 'Physics'
+      );
+    }
+
+    function isValidUserBriefing(data) {
+      return data.keys().hasAll([
+        'ownerId',
+        'editionId',
+        'dateKey',
+        'title',
+        'summaryHook',
+        'focusPillar',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId',
+        'editionId',
+        'dateKey',
+        'title',
+        'summaryHook',
+        'focusPillar',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.ownerId is string &&
+      data.ownerId.size() >= 1 &&
+      data.ownerId.size() <= 128 &&
+      data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.ownerId == request.auth.uid &&
+      data.editionId is string &&
+      data.editionId.size() >= 1 &&
+      data.editionId.size() <= 120 &&
+      data.editionId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.dateKey is string &&
+      data.dateKey.size() == 10 &&
+      data.dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+      data.title is string &&
+      data.title.size() >= 3 &&
+      data.title.size() <= 240 &&
+      data.summaryHook is string &&
+      data.summaryHook.size() >= 3 &&
+      data.summaryHook.size() <= 2000 &&
+      isValidPillar(data.focusPillar) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidChatMessageRecord(data) {
+      return data.keys().hasAll([
+        'ownerId',
+        'role',
+        'modelUsed',
+        'text',
+        'followUpOptions',
+        'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId',
+        'role',
+        'modelUsed',
+        'text',
+        'followUpOptions',
+        'createdAt'
+      ]) &&
+      data.ownerId is string &&
+      data.ownerId.size() >= 1 &&
+      data.ownerId.size() <= 128 &&
+      data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.ownerId == request.auth.uid &&
+      data.role is string &&
+      data.role.size() <= 16 &&
+      (data.role == 'user' || data.role == 'assistant') &&
+      data.modelUsed is string &&
+      data.modelUsed.size() >= 2 &&
+      data.modelUsed.size() <= 80 &&
+      data.text is string &&
+      data.text.size() >= 1 &&
+      data.text.size() <= 8000 &&
+      data.followUpOptions is list &&
+      data.followUpOptions.size() <= 4 &&
+      (data.followUpOptions.size() == 0 || (data.followUpOptions[0] is string && data.followUpOptions[0].size() <= 200)) &&
+      data.createdAt is timestamp;
+    }
+
+    match /user_briefings/{briefingId} {
+      allow get: if isSignedIn() && isValidId(briefingId) && existing().ownerId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isVerifiedUser() &&
+        isValidId(briefingId) &&
+        isValidUserBriefing(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser() &&
+        isValidId(briefingId) &&
+        isValidUserBriefing(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().editionId == existing().editionId &&
+        incoming().dateKey == existing().dateKey &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'summaryHook', 'focusPillar', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(briefingId) && existing().ownerId == request.auth.uid;
+    }
+
+    match /terminal_chats/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId) && existing().ownerId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isVerifiedUser() &&
+        isValidId(messageId) &&
+        isValidChatMessageRecord(incoming()) &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isVerifiedUser() && isValidId(messageId) && existing().ownerId == request.auth.uid;
+    }
+  }
+}

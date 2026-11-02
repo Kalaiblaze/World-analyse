@@ -17,7 +17,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate, onOpenSynthesizer })
         }}
         className="text-xl font-editorial font-bold tracking-tight text-[#1C1917] whitespace-nowrap shrink-0"
       >
-        VetriCheck Intelligence
+        NEXUS-7 // VetriCheck
       </a>
 
       {/* Zone 2: 5 concise single-line text navigation links */}
@@ -26,14 +26,14 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate, onOpenSynthesizer })
         className="hidden md:flex items-center gap-7 text-sm font-medium text-[#57534E]"
       >
         <a
-          href="#substack-wire"
+          href="#nexus7-terminal"
           onClick={(e) => {
             e.preventDefault();
-            onNavigate('substack-wire');
+            onNavigate('nexus7-terminal');
           }}
           className="hover:text-[#1C1917] hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
         >
-          Substack Wire
+          NEXUS-7 Terminal
         </a>
         <a
           href="#executive-summary"
@@ -43,7 +43,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate, onOpenSynthesizer })
           }}
           className="hover:text-[#1C1917] hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
         >
-          Executive Summary
+          Executive Briefing
         </a>
         <a
           href="#pillar-breakdown"
@@ -63,17 +63,17 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate, onOpenSynthesizer })
           }}
           className="hover:text-[#1C1917] hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
         >
-          Dot Matrix
+          Dot-Connecting Web
         </a>
         <a
-          href="#master-verdict"
+          href="#bioscience-workbench"
           onClick={(e) => {
             e.preventDefault();
-            onNavigate('master-verdict');
+            onNavigate('bioscience-workbench');
           }}
           className="hover:text-[#1C1917] hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
         >
-          Master Verdict
+          Bioscience Lab
         </a>
       </nav>
 

@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "UserBriefing": {
+      "title": "UserBriefing",
+      "description": "A daily or custom 6-pillar NEXUS-7 intelligence briefing saved by an authenticated user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the briefing owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "editionId": {
+          "type": "string",
+          "description": "Unique identifier of the briefing edition.",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dateKey": {
+          "type": "string",
+          "description": "ISO date string (YYYY-MM-DD) for daily briefing tracking.",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Headline title of the briefing.",
+          "minLength": 3,
+          "maxLength": 240
+        },
+        "summaryHook": {
+          "type": "string",
+          "description": "Executive Thunglish summary hook.",
+          "minLength": 3,
+          "maxLength": 2000
+        },
+        "focusPillar": {
+          "type": "string",
+          "description": "Primary pillar focus for the briefing.",
+          "enum": [
+            "ALL",
+            "Aerospace",
+            "Defence",
+            "Geopolitics",
+            "Money & Economy",
+            "Technology",
+            "Physics"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the briefing was saved."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the briefing was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "editionId",
+        "dateKey",
+        "title",
+        "summaryHook",
+        "focusPillar",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ChatMessageRecord": {
+      "title": "ChatMessageRecord",
+      "description": "An interactive NEXUS-7 terminal chat message persisted for an authenticated user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the message owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "description": "Sender role in the NEXUS-7 terminal.",
+          "enum": ["user", "assistant"]
+        },
+        "modelUsed": {
+          "type": "string",
+          "description": "Gemini model identifier used for the turn.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "text": {
+          "type": "string",
+          "description": "Message text content in Thunglish.",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "followUpOptions": {
+          "type": "array",
+          "description": "Bounded list of up to 4 interactive follow-up prompts."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the message was created."
+        }
+      },
+      "required": [
+        "ownerId",
+        "role",
+        "modelUsed",
+        "text",
+        "followUpOptions",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/user_briefings/{briefingId}": {
+      "schema": { "$ref": "#/entities/UserBriefing" },
+      "description": "Stores user-saved daily and custom 6-pillar intelligence briefings."
+    },
+    "/terminal_chats/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessageRecord" },
+      "description": "Stores multi-turn NEXUS-7 terminal chat history per authenticated user."
+    }
+  }
+}
