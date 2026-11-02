@@ -159,10 +159,19 @@ export const PillarMatrixSection: React.FC<PillarMatrixSectionProps> = ({
               {/* Pillar Header Row */}
               <div className="pb-6 mb-6 border-b border-[#E7E2D8]">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono-tabular text-[#78716C] mb-2">
-                  <div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-[#9A3412]">{pillar.code}</span>
                     <span aria-hidden="true"> · </span>
                     <span className="font-semibold text-[#1C1917]">{pillar.id}</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-800 border border-emerald-600/30 font-bold text-[11px]">
+                      🟢 LIVE
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-900 border border-amber-600/30 font-bold text-[11px]">
+                      ⚡ SYNCED
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-900 border border-sky-600/30 font-bold text-[11px]">
+                      🔍 DEEP-DIVE
+                    </span>
                   </div>
                   <div>
                     <span>Connected Vectors: </span>
@@ -206,12 +215,14 @@ export const PillarMatrixSection: React.FC<PillarMatrixSectionProps> = ({
                   temporalMode === 'ALL' ? 'lg:grid-cols-3' : 'lg:grid-cols-1'
                 } gap-6`}
               >
-                {/* 1. PAST (Historical Context) */}
+                {/* 1. PAST (Historical Root Cause) */}
                 {(temporalMode === 'ALL' || temporalMode === 'PAST') && (
                   <div className="flex flex-col justify-between p-5 bg-[#FBF9F5] border border-[#E7E2D8] rounded-md">
                     <div>
                       <div className="flex items-center justify-between text-xs font-mono-tabular uppercase tracking-wider text-[#57534E] mb-3 pb-2 border-b border-[#E7E2D8]">
-                        <span className="font-semibold text-[#1C1917]">01. PAST (ROOT CONTEXT)</span>
+                        <span className="font-semibold text-[#1C1917]">
+                          🔸 [PAST] Historical Root Cause
+                        </span>
                         <span>{pillar.past.era}</span>
                       </div>
                       <p className="text-sm text-[#44403C] leading-relaxed mb-4">
@@ -229,12 +240,14 @@ export const PillarMatrixSection: React.FC<PillarMatrixSectionProps> = ({
                   </div>
                 )}
 
-                {/* 2. PRESENT (Current Trigger) */}
+                {/* 2. PRESENT (Current Trigger & Reality) */}
                 {(temporalMode === 'ALL' || temporalMode === 'PRESENT') && (
                   <div className="flex flex-col justify-between p-5 bg-[#F3EFE6]/60 border border-[#D6CEBE] rounded-md">
                     <div>
                       <div className="flex items-center justify-between text-xs font-mono-tabular uppercase tracking-wider text-[#9A3412] mb-3 pb-2 border-b border-[#D6CEBE]">
-                        <span className="font-semibold">02. PRESENT (CURRENT TRIGGER)</span>
+                        <span className="font-semibold">
+                          🔸 [PRESENT] Current Trigger &amp; Reality
+                        </span>
                         <span>{pillar.present.dateMarker}</span>
                       </div>
                       <p className="text-sm font-medium text-[#1C1917] leading-relaxed mb-3">
@@ -255,13 +268,15 @@ export const PillarMatrixSection: React.FC<PillarMatrixSectionProps> = ({
                   </div>
                 )}
 
-                {/* 3. FUTURE (1, 5 & 10-Year Consequences) */}
+                {/* 3. FUTURE (1-to-5 Year Consequence Prediction) */}
                 {(temporalMode === 'ALL' || temporalMode === 'FUTURE') && (
                   <div className="flex flex-col justify-between p-5 bg-[#FBF9F5] border border-[#E7E2D8] rounded-md">
                     <div>
                       <div className="flex items-center justify-between text-xs font-mono-tabular uppercase tracking-wider text-[#1E3A8A] mb-3 pb-2 border-b border-[#E7E2D8]">
-                        <span className="font-semibold">03. FUTURE (2ND &amp; 3RD ORDER)</span>
-                        <span>1Y · 5Y · 10Y HORIZON</span>
+                        <span className="font-semibold">
+                          🔸 [FUTURE] 1-to-5 Year Consequence Prediction
+                        </span>
+                        <span>1Y · 5Y · 10Y</span>
                       </div>
 
                       <dl className="space-y-3 text-xs leading-relaxed mb-4">

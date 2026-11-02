@@ -1,35 +1,128 @@
 @import "tailwindcss";
 
 @layer base {
-  :root {
-    --font-serif: 'Fraunces', Georgia, serif;
+  :root,
+  :root[data-theme="obsidian-night"] {
+    --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-serif: 'Space Grotesk', Georgia, serif;
     --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+
+    --nexus-bg: #07090E;
+    --nexus-bg-gradient:
+      radial-gradient(circle at 16% 12%, rgba(56, 189, 248, 0.08), transparent 45%),
+      radial-gradient(circle at 84% 22%, rgba(139, 92, 246, 0.07), transparent 48%),
+      radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.05), transparent 50%);
+    --nexus-header-bg: rgba(7, 9, 14, 0.88);
+    --nexus-surface: rgba(255, 255, 255, 0.03);
+    --nexus-surface-elevated: rgba(255, 255, 255, 0.055);
+    --nexus-surface-recessed: rgba(0, 0, 0, 0.42);
+    --nexus-card-solid-bg: #FBF9F5;
+    --nexus-card-solid-recessed: #F3EFE6;
+    --nexus-card-solid-text: #1C1917;
+    --nexus-card-solid-border: #292524;
+    --nexus-border: rgba(255, 255, 255, 0.08);
+    --nexus-border-strong: rgba(56, 189, 248, 0.42);
+    --nexus-text-primary: #F8FAFC;
+    --nexus-text-secondary: #CBD5E1;
+    --nexus-text-muted: #94A3B8;
+    --nexus-accent: #38BDF8;
+    --nexus-accent-secondary: #8B5CF6;
+    --nexus-accent-contrast: #020617;
+    --nexus-accent-soft: rgba(56, 189, 248, 0.14);
+    --nexus-glow: 0 0 28px -6px rgba(56, 189, 248, 0.32);
+    --nexus-scanline-opacity: 0;
+  }
+
+  :root[data-theme="terminal-green"] {
+    --nexus-bg: #020A04;
+    --nexus-bg-gradient:
+      radial-gradient(circle at 18% 14%, rgba(0, 255, 102, 0.14), transparent 46%),
+      radial-gradient(circle at 82% 24%, rgba(16, 185, 129, 0.12), transparent 50%),
+      radial-gradient(circle at 50% 85%, rgba(0, 255, 102, 0.08), transparent 55%);
+    --nexus-header-bg: rgba(2, 10, 4, 0.94);
+    --nexus-surface: rgba(0, 255, 102, 0.055);
+    --nexus-surface-elevated: rgba(0, 255, 102, 0.11);
+    --nexus-surface-recessed: rgba(1, 6, 2, 0.78);
+    --nexus-card-solid-bg: #041409;
+    --nexus-card-solid-recessed: #020B05;
+    --nexus-card-solid-text: #E2FFE9;
+    --nexus-card-solid-border: #00FF66;
+    --nexus-border: rgba(0, 255, 102, 0.34);
+    --nexus-border-strong: #00FF66;
+    --nexus-text-primary: #E2FFE9;
+    --nexus-text-secondary: #86EFAC;
+    --nexus-text-muted: #4ADE80;
+    --nexus-accent: #00FF66;
+    --nexus-accent-secondary: #10B981;
+    --nexus-accent-contrast: #010803;
+    --nexus-accent-soft: rgba(0, 255, 102, 0.2);
+    --nexus-glow: 0 0 32px -4px rgba(0, 255, 102, 0.5);
+    --nexus-scanline-opacity: 0.18;
   }
 
   body {
     font-family: var(--font-sans);
-    background-color: #FBF9F5;
-    color: #1C1917;
+    background-color: var(--nexus-bg);
+    background-image: var(--nexus-bg-gradient);
+    color: var(--nexus-text-primary);
+    line-height: 1.65;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    transition: background-color 240ms ease, color 240ms ease;
   }
 
-  h1, h2, h3, .font-editorial {
-    font-family: var(--font-serif);
+  h1, h2, h3, h4, .font-display, .font-editorial {
+    font-family: var(--font-display);
+    letter-spacing: -0.03em;
   }
 
   .font-mono-tabular {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
   }
 }
 
-/* Tactile 3D Spatial UI Surface Utilities (Compositor-only transform & elevation) */
+/* Global Root Theme Shell & High-Contrast Terminal Green Adaptations */
+.nexus-theme-shell {
+  background-color: var(--nexus-bg);
+  background-image: var(--nexus-bg-gradient);
+  color: var(--nexus-text-primary);
+  position: relative;
+  transition: background-color 240ms ease, color 240ms ease;
+}
+
+.nexus-theme-header {
+  background-color: var(--nexus-header-bg);
+  border-color: var(--nexus-border);
+}
+
+/* Linear / Raycast Obsidian & Terminal Green Glassmorphic Surface Utilities */
+.obsidian-bento-card {
+  background-color: var(--nexus-surface);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--nexus-border);
+  color: var(--nexus-text-primary);
+  transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.obsidian-bento-card:hover {
+  border-color: var(--nexus-border-strong);
+  box-shadow: var(--nexus-glow);
+  transform: translateY(-4px);
+}
+
+:root[data-theme="terminal-green"] .obsidian-bento-card {
+  box-shadow: inset 0 0 24px rgba(0, 255, 102, 0.04);
+}
+
 .surface-3d-card {
-  background-color: #FBF9F5;
-  border: 1.5px solid #292524;
-  box-shadow: 0 6px 0 0 #292524;
-  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  background-color: var(--nexus-card-solid-bg);
+  color: var(--nexus-card-solid-text);
+  border: 1.5px solid var(--nexus-card-solid-border);
+  box-shadow: 0 6px 0 0 var(--nexus-card-solid-border);
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1), background-color 220ms ease, color 220ms ease, border-color 220ms ease;
 }
 
 .surface-3d-card:hover {
@@ -37,14 +130,21 @@
 }
 
 .surface-3d-recessed {
-  background-color: #F3EFE6;
-  border: 1.5px solid #ABA396;
-  box-shadow: inset 0 2px 4px 0 rgba(28, 25, 23, 0.08);
+  background-color: var(--nexus-card-solid-recessed);
+  color: var(--nexus-card-solid-text);
+  border: 1.5px solid var(--nexus-border);
+  box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.16);
+  transition: background-color 220ms ease, color 220ms ease, border-color 220ms ease;
+}
+
+:root[data-theme="terminal-green"] .surface-3d-card *,
+:root[data-theme="terminal-green"] .surface-3d-recessed * {
+  border-color: rgba(0, 255, 102, 0.32);
 }
 
 .btn-3d-tactile {
-  border: 1.5px solid #1C1917;
-  box-shadow: 0 3px 0 0 #1C1917;
+  border: 1.5px solid var(--nexus-card-solid-border);
+  box-shadow: 0 3px 0 0 var(--nexus-card-solid-border);
   transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 

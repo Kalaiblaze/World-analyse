@@ -5,6 +5,8 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { TopBar } from './components/TopBar';
+import { ObsidianBentoMatrix } from './components/ObsidianBentoMatrix';
+import { EliteBrainDojoSection } from './components/EliteBrainDojoSection';
 import { Nexus7CommandCenter } from './components/Nexus7CommandCenter';
 import { SpatialPatternObservatory3D } from './components/SpatialPatternObservatory3D';
 import { SubstackFeedPanel } from './components/SubstackFeedPanel';
@@ -14,6 +16,13 @@ import { DotConnectingSection } from './components/DotConnectingSection';
 import { BioscienceWorkbenchSection } from './components/BioscienceWorkbenchSection';
 import { MasterVerdictSection } from './components/MasterVerdictSection';
 import { PWAInstallControl } from './components/PWAInstallControl';
+import { ThemeToggleControl } from './components/ThemeToggleControl';
+import {
+  type ThemeMode,
+  THEME_STORAGE_KEY,
+  applyThemeToRoot,
+  getNextThemeMode,
+} from './utils/themeEngine';
 import {
   CURATED_BRIEFINGS,
   type IntelligenceBriefing,
@@ -25,8 +34,65 @@ import {
   type SubstackArticle,
   convertSubstackArticleToBriefing,
 } from './utils/substackParser';
+import {
+  ACCOUNT_SYNC_EVENT,
+  type SharedAccountVault,
+  getStoredAccountSession,
+} from './utils/crossDeviceSync';
 
 export default function App() {
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    try {
+      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (saved === 'terminal-green' || saved === 'obsidian-night') {
+        return saved;
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return 'obsidian-night';
+  });
+
+  useEffect(() => {
+    applyThemeToRoot(themeMode);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+    } catch {
+      // Ignore storage errors
+    }
+  }, [themeMode]);
+
+  useEffect(() => {
+    const handleAccountSync = (e: Event) => {
+      const custom = e as CustomEvent<{ vault?: SharedAccountVault | null }>;
+      const syncedTheme = custom.detail?.vault?.themeMode;
+      if (syncedTheme === 'obsidian-night' || syncedTheme === 'terminal-green') {
+        setThemeMode(syncedTheme);
+      }
+    };
+    window.addEventListener(ACCOUNT_SYNC_EVENT, handleAccountSync);
+    return () => window.removeEventListener(ACCOUNT_SYNC_EVENT, handleAccountSync);
+  }, []);
+
+  const handleToggleTheme = (nextMode?: ThemeMode) => {
+    setThemeMode((prev) => {
+      const resolved = nextMode ?? getNextThemeMode(prev);
+      const creds = getStoredAccountSession();
+      if (creds) {
+        fetch('/api/account/preferences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountId: creds.accountId,
+            syncKey: creds.syncKey,
+            themeMode: resolved,
+          }),
+        }).catch(() => {});
+      }
+      return resolved;
+    });
+  };
+
   const [editions, setEditions] = useState<IntelligenceBriefing[]>(CURATED_BRIEFINGS);
   const [activeEditionId, setActiveEditionId] = useState<string>(CURATED_BRIEFINGS[0].editionId);
   const [selectedPillar, setSelectedPillar] = useState<PillarId | 'ALL'>('ALL');
@@ -56,6 +122,17 @@ export default function App() {
 
   const activeBriefing =
     editions.find((b) => b.editionId === activeEditionId) ?? editions[0];
+
+  const handleSimulateNextFeed = () => {
+    const currentIndex = editions.findIndex((e) => e.editionId === activeBriefing.editionId);
+    const nextIndex = (currentIndex + 1) % editions.length;
+    const nextEdition = editions[nextIndex];
+    setActiveEditionId(nextEdition.editionId);
+    setSelectedPillar('ALL');
+    setStatusNotice(
+      `🟢 Simulated Live Intelligence Scenario ${nextIndex + 1}/${editions.length}: "${nextEdition.title}"`
+    );
+  };
 
   const syncDailyBriefing = useCallback(async (targetDateKey?: string, showBanner = false) => {
     const dateKeyToFetch = targetDateKey || new Date().toISOString().slice(0, 10);
@@ -169,7 +246,7 @@ export default function App() {
         setStatusNotice(
           `Decoded Substack dispatch: "${article.title}" (${article.publicationName}) across all 6 pillars.`
         );
-        scrollToSection('executive-summary');
+        scrollToSection('obsidian-bento-matrix');
         return;
       }
     } catch {
@@ -185,7 +262,7 @@ export default function App() {
     setStatusNotice(
       `Decoded Substack dispatch: "${article.title}" (${article.publicationName}) across all 6 pillars.`
     );
-    scrollToSection('executive-summary');
+    scrollToSection('obsidian-bento-matrix');
   };
 
   const handleSyncLiveRss = async (sourceId: string) => {
@@ -238,7 +315,7 @@ export default function App() {
         setStatusNotice(
           `Decoded Substack source "${urlOrTopic}" into 6-Pillar Thunglish Pattern Matrix.`
         );
-        scrollToSection('executive-summary');
+        scrollToSection('obsidian-bento-matrix');
         return;
       }
     } catch {
@@ -254,7 +331,7 @@ export default function App() {
     setEditions((prev) => [fallbackBriefing, ...prev]);
     setActiveEditionId(fallbackBriefing.editionId);
     setStatusNotice(`Decoded Substack source "${urlOrTopic}" into 6-Pillar Thunglish Pattern Matrix.`);
-    scrollToSection('executive-summary');
+    scrollToSection('obsidian-bento-matrix');
   };
 
   const handleSynthesizeCustomSignal = async (
@@ -280,7 +357,7 @@ export default function App() {
         setStatusNotice(
           `Synthesized new 6-Pillar Thunglish Briefing for: "${query}".`
         );
-        scrollToSection('executive-summary');
+        scrollToSection('obsidian-bento-matrix');
         return;
       }
     } catch {
@@ -295,49 +372,82 @@ export default function App() {
     setActiveSubstackId(null);
     setSelectedPillar('ALL');
     setStatusNotice(`Synthesized new 6-Pillar Thunglish Briefing for: "${query}".`);
-    scrollToSection('executive-summary');
+    scrollToSection('obsidian-bento-matrix');
   };
 
   return (
-    <div id="top" className="min-h-screen flex flex-col bg-[#FBF9F5] text-[#1C1917]">
+    <div id="top" className="nexus-theme-shell min-h-screen flex flex-col">
       {/* Strict 3-Zone Top Bar */}
       <TopBar
         onNavigate={scrollToSection}
         onOpenSynthesizer={() => scrollToSection('custom-synthesizer')}
       />
 
-      {/* Operational Utility Strip + PWA Device Installation Control */}
-      <div className="bg-[#F3EFE6] border-b border-[#D6CEBE] px-6 lg:px-12 py-2.5 text-xs font-mono-tabular text-[#57534E] flex flex-wrap items-center justify-between gap-4">
+      {/* Operational Utility Strip + Theme Toggle + PWA Device Installation Control */}
+      <div
+        className="border-b px-6 lg:px-12 py-2.5 text-xs font-mono-tabular uppercase flex flex-wrap items-center justify-between gap-4 transition-colors"
+        style={{
+          backgroundColor: 'var(--nexus-surface)',
+          borderColor: 'var(--nexus-border)',
+          color: 'var(--nexus-text-secondary)',
+        }}
+      >
         <div>
-          <span>NEXUS-7 REAL-TIME COMMAND CENTER &amp; 3D PATTERN MATRIX</span>
+          <span className="font-semibold" style={{ color: 'var(--nexus-accent)' }}>
+            NEXUS-7 // GLOBAL PATTERN INTELLIGENCE
+          </span>
           <span aria-hidden="true"> · </span>
           <span>6 PILLARS: AEROSPACE / DEFENCE / GEOPOLITICS / MONEY / TECH / PHYSICS</span>
         </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <span className="hidden xl:inline">
-            DAILY AUTO-UPDATE · PAST ➔ PRESENT ➔ FUTURE (1–10Y)
-          </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <ThemeToggleControl themeMode={themeMode} onToggleTheme={handleToggleTheme} />
           <PWAInstallControl />
         </div>
       </div>
 
       {/* Main Content Container */}
-      <main className="flex-1 w-full max-w-[1320px] mx-auto px-6 lg:px-12">
+      <main className="flex-1 w-full max-w-[1360px] mx-auto px-6 lg:px-12">
         {statusNotice && (
           <div
             role="status"
-            className="mt-6 p-4 bg-[#F3EFE6] border-2 border-[#9A3412] shadow-[0_4px_0_0_#9A3412] rounded-md flex items-center justify-between gap-4 text-xs font-medium text-[#1C1917]"
+            className="mt-6 p-4 rounded-xl flex items-center justify-between gap-4 text-xs font-medium border"
+            style={{
+              backgroundColor: 'var(--nexus-accent-soft)',
+              borderColor: 'var(--nexus-border-strong)',
+              color: 'var(--nexus-text-primary)',
+            }}
           >
             <span>{statusNotice}</span>
             <button
               type="button"
               onClick={() => setStatusNotice(null)}
-              className="text-[#9A3412] font-mono-tabular underline cursor-pointer shrink-0"
+              className="font-mono-tabular uppercase underline cursor-pointer shrink-0"
+              style={{ color: 'var(--nexus-accent)' }}
             >
               Dismiss
             </button>
           </div>
         )}
+
+        {/* Linear / Raycast Obsidian & Terminal Green Interactive Bento-Grid Matrix */}
+        <ObsidianBentoMatrix
+          briefing={activeBriefing}
+          editions={editions}
+          selectedPillar={selectedPillar}
+          onSelectPillar={setSelectedPillar}
+          onSimulateNextFeed={handleSimulateNextFeed}
+          themeMode={themeMode}
+          onToggleTheme={handleToggleTheme}
+        />
+
+        {/* 4-Part Elite Brain Dojo, Book Wisdom, Titan vs. Titanic Case Study & Charisma Mentor */}
+        <EliteBrainDojoSection
+          briefing={activeBriefing}
+          onSelectPillar={(pillar) => {
+            setSelectedPillar(pillar);
+            scrollToSection('obsidian-bento-matrix');
+          }}
+        />
 
         {/* NEXUS-7 Real-Time Command Center Terminal (System Status, Daily Auto-Sync, Firebase Cloud Vault, Multi-Turn Chat, Search/Maps Grounding, Voice Transcribe, Image & Video Studio) */}
         <Nexus7CommandCenter
@@ -411,32 +521,39 @@ export default function App() {
       </main>
 
       {/* Clean Editorial Footer */}
-      <footer className="mt-16 border-t border-[#D6CEBE] bg-[#F3EFE6] px-6 lg:px-12 py-8">
-        <div className="max-w-[1320px] mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-[#57534E]">
+      <footer
+        className="mt-16 border-t px-6 lg:px-12 py-8 transition-colors"
+        style={{
+          backgroundColor: 'var(--nexus-surface)',
+          borderColor: 'var(--nexus-border)',
+          color: 'var(--nexus-text-secondary)',
+        }}
+      >
+        <div className="max-w-[1320px] mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
           <div>
-            <span className="font-editorial font-bold text-[#1C1917]">
+            <span className="font-editorial font-bold" style={{ color: 'var(--nexus-text-primary)' }}>
               NEXUS-7 // VetriCheck Global Intelligence Terminal
             </span>
             <span aria-hidden="true"> · </span>
             <span>Daily Auto-Updated 6-Pillar 3D Pattern Recognition Matrix</span>
           </div>
           <div className="flex flex-wrap items-center gap-4">
-            <a href="#nexus7-terminal" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
+            <a href="#nexus7-terminal" className="underline-offset-4 hover:underline">
               NEXUS-7 Terminal
             </a>
-            <a href="#spatial-observatory" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
+            <a href="#spatial-observatory" className="underline-offset-4 hover:underline">
               3D Observatory
             </a>
-            <a href="#executive-summary" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
+            <a href="#executive-summary" className="underline-offset-4 hover:underline">
               Executive Briefing
             </a>
-            <a href="#pillar-breakdown" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
+            <a href="#pillar-breakdown" className="underline-offset-4 hover:underline">
               Six Pillars
             </a>
-            <a href="#dot-matrix" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
+            <a href="#dot-matrix" className="underline-offset-4 hover:underline">
               Dot-Connecting Web
             </a>
-            <a href="#bioscience-workbench" className="hover:text-[#1C1917] underline-offset-4 hover:underline">
+            <a href="#bioscience-workbench" className="underline-offset-4 hover:underline">
               Bioscience Lab
             </a>
           </div>

@@ -14,12 +14,12 @@ export default defineConfig(() => {
         includeAssets: ['icon.svg', 'apple-touch-icon.png'],
         manifest: {
           id: '/',
-          name: 'VetriCheck Global Intelligence Desk',
-          short_name: 'VetriCheck',
+          name: 'NEXUS-7 // Global Pattern Intelligence',
+          short_name: 'NEXUS-7',
           description:
-            'Multi-disciplinary daily global intelligence briefing and 3D pattern recognition engine across Aerospace, Defence, Geopolitics, Money, Technology, and Physics in sharp Thunglish.',
-          theme_color: '#1C1917',
-          background_color: '#FBF9F5',
+            'Multi-disciplinary daily global intelligence briefing and 3D pattern recognition engine across Aerospace, Defence, Geopolitics, Money, Technology, and Physics — synced across Ubuntu Linux and Phone.',
+          theme_color: '#07090E',
+          background_color: '#07090E',
           display: 'standalone',
           start_url: '/',
           scope: '/',
@@ -80,8 +80,7 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],

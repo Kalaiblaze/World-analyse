@@ -174,3 +174,93 @@ test('scienceEngine classifies 4-band AlphaFold pLDDT confidence scores and cons
   assert.ok(link.includes('m=variant'));
 });
 
+import {
+  THEME_SPECS,
+  applyThemeToRoot,
+  getNextThemeMode,
+  getThemeCssVariables,
+} from './themeEngine.ts';
+
+test('themeEngine switches between Obsidian Night and Terminal Green and sets global CSS variables on root', () => {
+  assert.equal(getNextThemeMode('obsidian-night'), 'terminal-green');
+  assert.equal(getNextThemeMode('terminal-green'), 'obsidian-night');
+
+  const obsidianVars = getThemeCssVariables('obsidian-night');
+  const terminalVars = getThemeCssVariables('terminal-green');
+
+  assert.equal(obsidianVars['--nexus-bg'], '#07090E');
+  assert.equal(terminalVars['--nexus-bg'], '#020A04');
+  assert.equal(terminalVars['--nexus-accent'], '#00FF66');
+  assert.equal(THEME_SPECS['obsidian-night'].label, 'Obsidian Night');
+  assert.equal(THEME_SPECS['terminal-green'].label, 'Terminal Green');
+
+  // Verify applyThemeToRoot writes data-theme and CSS custom properties
+  const recordedProps: Record<string, string> = {};
+  const recordedAttrs: Record<string, string> = {};
+  const mockRoot = {
+    setAttribute(name: string, val: string) {
+      recordedAttrs[name] = val;
+    },
+    style: {
+      setProperty(prop: string, val: string) {
+        recordedProps[prop] = val;
+      },
+    },
+  } as unknown as HTMLElement;
+
+  applyThemeToRoot('terminal-green', mockRoot);
+  assert.equal(recordedAttrs['data-theme'], 'terminal-green');
+  assert.equal(recordedProps['--nexus-bg'], '#020A04');
+  assert.equal(recordedProps['--nexus-accent'], '#00FF66');
+});
+
+import {
+  buildPairingUrl,
+  buildUbuntuTerminalCommand,
+  detectClientPlatform,
+  normalizeAccountIdentity,
+} from './crossDeviceSync.ts';
+
+test('crossDeviceSync detects Ubuntu Linux and Phone platforms and normalizes shared account credentials', () => {
+  const ubuntuDetected = detectClientPlatform(
+    'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0'
+  );
+  assert.equal(ubuntuDetected.platform, 'ubuntu-linux');
+  assert.ok(ubuntuDetected.badgeLabel.includes('Ubuntu'));
+
+  const androidDetected = detectClientPlatform(
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36'
+  );
+  assert.equal(androidDetected.platform, 'android-phone');
+
+  const iosDetected = detectClientPlatform(
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148'
+  );
+  assert.equal(iosDetected.platform, 'ios-phone');
+
+  const invalidAcc = normalizeAccountIdentity('ab');
+  assert.equal(invalidAcc.valid, false);
+
+  const validAcc = normalizeAccountIdentity('  Machi@Ubuntu-Nexus7.io ', 'nx7-7788');
+  assert.equal(validAcc.valid, true);
+  assert.equal(validAcc.accountId, 'machi@ubuntu-nexus7.io');
+  assert.equal(validAcc.syncKey, 'NX7-7788');
+  assert.equal(validAcc.displayName, 'MACHI');
+
+  const pairingUrl = buildPairingUrl(
+    'https://nexus7.example.com/',
+    validAcc.accountId,
+    validAcc.syncKey
+  );
+  assert.equal(
+    pairingUrl,
+    'https://nexus7.example.com/?account=machi%40ubuntu-nexus7.io&syncKey=NX7-7788'
+  );
+
+  const cliCmd = buildUbuntuTerminalCommand(
+    'http://localhost:3000',
+    validAcc.accountId,
+    validAcc.syncKey
+  );
+  assert.ok(cliCmd.includes('/api/account/ubuntu-cli?account=machi%40ubuntu-nexus7.io&syncKey=NX7-7788'));
+});

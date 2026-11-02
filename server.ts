@@ -1,7 +1,11 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+process.env.DISABLE_HMR = 'true';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
   ALL_PILLARS,
@@ -28,6 +32,14 @@ import {
   classifyPlddtBand,
   fetchWithRetry,
 } from './src/utils/scienceEngine.ts';
+import {
+  type ConnectedDeviceNode,
+  type DevicePlatformType,
+  type SharedAccountVault,
+  type SyncedBriefingItem,
+  type SyncedChatItem,
+  normalizeAccountIdentity,
+} from './src/utils/crossDeviceSync.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,12 +53,114 @@ const ai = new GoogleGenAI({
   },
 });
 
+let geminiQuotaCooldownUntil = 0;
+
+const dailyBriefingCache = new Map<
+  string,
+  {
+    briefing: IntelligenceBriefing;
+    groundingLinks: { title: string; uri: string }[];
+    syncedAt: string;
+    source: string;
+  }
+>();
+
 function hasConfiguredGeminiKey(): boolean {
+  if (Date.now() < geminiQuotaCooldownUntil) {
+    return false;
+  }
   return (
     Boolean(process.env.GEMINI_API_KEY) &&
     process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY' &&
     process.env.GEMINI_API_KEY !== 'MISSING_KEY'
   );
+}
+
+function handleGeminiQuotaOrRuntimeFailure(err: unknown): void {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
+    // Pause live Gemini API calls for 15 minutes when quota is exhausted so subsequent requests return immediately
+    geminiQuotaCooldownUntil = Date.now() + 15 * 60 * 1000;
+  }
+}
+
+// Persistent Cross-Device Account Vault Store (Ubuntu Linux + Mobile Phone + Web)
+const VAULT_FILE_PATH = path.join(os.tmpdir(), 'nexus7-account-vaults.json');
+const accountVaults = new Map<string, SharedAccountVault>();
+
+function loadAccountVaultsFromDisk(): void {
+  try {
+    if (fs.existsSync(VAULT_FILE_PATH)) {
+      const raw = fs.readFileSync(VAULT_FILE_PATH, 'utf8');
+      const parsed = JSON.parse(raw) as Record<string, SharedAccountVault>;
+      for (const [k, v] of Object.entries(parsed)) {
+        accountVaults.set(k, v);
+      }
+    }
+  } catch {
+    // Use in-memory store if disk read fails
+  }
+}
+
+function persistAccountVaultsToDisk(): void {
+  try {
+    const serialized: Record<string, SharedAccountVault> = {};
+    for (const [k, v] of accountVaults.entries()) {
+      serialized[k] = v;
+    }
+    fs.writeFileSync(VAULT_FILE_PATH, JSON.stringify(serialized, null, 2), 'utf8');
+  } catch {
+    // Ignore write failure in read-only containers
+  }
+}
+
+loadAccountVaultsFromDisk();
+
+function getOrCreateAccountVault(accountId: string, syncKey: string, displayName: string): SharedAccountVault {
+  const vaultKey = `${accountId}::${syncKey}`;
+  const existing = accountVaults.get(vaultKey);
+  if (existing) {
+    return existing;
+  }
+  const initialBriefing = CURATED_BRIEFINGS[0];
+  const created: SharedAccountVault = {
+    accountId,
+    syncKey,
+    displayName,
+    themeMode: 'obsidian-night',
+    selectedPillar: 'ALL',
+    devices: [
+      {
+        deviceId: 'ubuntu-primary-node',
+        deviceName: 'Ubuntu Linux Workstation (x86_64)',
+        platform: 'ubuntu-linux',
+        lastSeenIso: new Date().toISOString(),
+      },
+      {
+        deviceId: 'mobile-companion-node',
+        deviceName: 'Mobile Phone Companion Node',
+        platform: 'android-phone',
+        lastSeenIso: new Date().toISOString(),
+      },
+    ],
+    savedBriefings: [
+      {
+        id: `sync-init-${Date.now()}`,
+        editionId: initialBriefing.editionId,
+        dateKey: new Date().toISOString().slice(0, 10),
+        title: initialBriefing.title,
+        summaryHook: initialBriefing.executiveSummary.bigPictureHeadline,
+        focusPillar: 'ALL',
+        savedFromPlatform: 'ubuntu-linux',
+        savedAtIso: new Date().toISOString(),
+      },
+    ],
+    savedChats: [],
+    updatedAtIso: new Date().toISOString(),
+  };
+  accountVaults.set(vaultKey, created);
+  persistAccountVaultsToDisk();
+  return created;
 }
 
 async function fetchWithTimeout(url: string, timeoutMs = 4500): Promise<string | null> {
@@ -131,12 +245,283 @@ async function startServer() {
 
   app.use(express.json({ limit: '15mb' }));
 
+  // Cross-Device Account Sync Endpoints (Connects Ubuntu Linux + Phone + Web under same account)
+  app.post('/api/account/sync', (req, res) => {
+    const {
+      accountInput,
+      syncKeyInput,
+      deviceId,
+      deviceName,
+      platform = 'desktop-workstation',
+    } = req.body as {
+      accountInput?: string;
+      syncKeyInput?: string;
+      deviceId?: string;
+      deviceName?: string;
+      platform?: DevicePlatformType;
+    };
+
+    const normalized = normalizeAccountIdentity(accountInput || '', syncKeyInput);
+    if (!normalized.valid) {
+      return res.status(400).json({ error: normalized.error });
+    }
+
+    const vault = getOrCreateAccountVault(
+      normalized.accountId,
+      normalized.syncKey,
+      normalized.displayName
+    );
+
+    const safeDeviceId = (deviceId || `node-${platform}`).slice(0, 64);
+    const safeDeviceName = (deviceName || 'NEXUS-7 Node').slice(0, 80);
+    const nowIso = new Date().toISOString();
+
+    const existingDeviceIndex = vault.devices.findIndex((d) => d.deviceId === safeDeviceId);
+    const updatedDevice: ConnectedDeviceNode = {
+      deviceId: safeDeviceId,
+      deviceName: safeDeviceName,
+      platform,
+      lastSeenIso: nowIso,
+    };
+
+    if (existingDeviceIndex >= 0) {
+      vault.devices[existingDeviceIndex] = updatedDevice;
+    } else {
+      vault.devices.unshift(updatedDevice);
+      vault.devices = vault.devices.slice(0, 8);
+    }
+
+    vault.updatedAtIso = nowIso;
+    persistAccountVaultsToDisk();
+
+    return res.json({
+      vault,
+      currentDeviceId: safeDeviceId,
+    });
+  });
+
+  app.post('/api/account/preferences', (req, res) => {
+    const { accountId, syncKey, themeMode, selectedPillar } = req.body as {
+      accountId?: string;
+      syncKey?: string;
+      themeMode?: 'obsidian-night' | 'terminal-green';
+      selectedPillar?: string;
+    };
+    const normalized = normalizeAccountIdentity(accountId || '', syncKey);
+    if (!normalized.valid) {
+      return res.status(400).json({ error: normalized.error });
+    }
+    const vault = getOrCreateAccountVault(
+      normalized.accountId,
+      normalized.syncKey,
+      normalized.displayName
+    );
+    if (themeMode === 'obsidian-night' || themeMode === 'terminal-green') {
+      vault.themeMode = themeMode;
+    }
+    if (selectedPillar) {
+      vault.selectedPillar = selectedPillar;
+    }
+    vault.updatedAtIso = new Date().toISOString();
+    persistAccountVaultsToDisk();
+    return res.json({ vault });
+  });
+
+  app.post('/api/account/briefings', (req, res) => {
+    const {
+      accountId,
+      syncKey,
+      editionId,
+      dateKey,
+      title,
+      summaryHook,
+      focusPillar = 'ALL',
+      platform = 'ubuntu-linux',
+    } = req.body as {
+      accountId?: string;
+      syncKey?: string;
+      editionId?: string;
+      dateKey?: string;
+      title?: string;
+      summaryHook?: string;
+      focusPillar?: string;
+      platform?: DevicePlatformType;
+    };
+
+    const normalized = normalizeAccountIdentity(accountId || '', syncKey);
+    if (!normalized.valid) {
+      return res.status(400).json({ error: normalized.error });
+    }
+
+    const vault = getOrCreateAccountVault(
+      normalized.accountId,
+      normalized.syncKey,
+      normalized.displayName
+    );
+
+    const safeEditionId = (editionId || `ed-${Date.now()}`).slice(0, 100);
+    const existingIdx = vault.savedBriefings.findIndex((b) => b.editionId === safeEditionId);
+    const record: SyncedBriefingItem = {
+      id: existingIdx >= 0 ? vault.savedBriefings[existingIdx].id : `brf-${Date.now()}`,
+      editionId: safeEditionId,
+      dateKey: dateKey || new Date().toISOString().slice(0, 10),
+      title: (title || 'NEXUS-7 Daily Briefing').slice(0, 240),
+      summaryHook: (summaryHook || '6-Pillar Cross-Domain Intelligence').slice(0, 1200),
+      focusPillar,
+      savedFromPlatform: platform,
+      savedAtIso: new Date().toISOString(),
+    };
+
+    if (existingIdx >= 0) {
+      vault.savedBriefings[existingIdx] = record;
+    } else {
+      vault.savedBriefings.unshift(record);
+      vault.savedBriefings = vault.savedBriefings.slice(0, 25);
+    }
+
+    vault.updatedAtIso = new Date().toISOString();
+    persistAccountVaultsToDisk();
+    return res.json({ vault, savedRecord: record });
+  });
+
+  app.delete('/api/account/briefings/:id', (req, res) => {
+    const accountId = typeof req.query.accountId === 'string' ? req.query.accountId : '';
+    const syncKey = typeof req.query.syncKey === 'string' ? req.query.syncKey : '';
+    const normalized = normalizeAccountIdentity(accountId, syncKey);
+    if (!normalized.valid) {
+      return res.status(400).json({ error: normalized.error });
+    }
+    const vault = getOrCreateAccountVault(
+      normalized.accountId,
+      normalized.syncKey,
+      normalized.displayName
+    );
+    vault.savedBriefings = vault.savedBriefings.filter((b) => b.id !== req.params.id);
+    vault.updatedAtIso = new Date().toISOString();
+    persistAccountVaultsToDisk();
+    return res.json({ vault });
+  });
+
+  app.post('/api/account/chats', (req, res) => {
+    const {
+      accountId,
+      syncKey,
+      role,
+      modelUsed,
+      text,
+      followUpOptions = [],
+      devicePlatform = 'ubuntu-linux',
+    } = req.body as {
+      accountId?: string;
+      syncKey?: string;
+      role?: 'user' | 'assistant';
+      modelUsed?: string;
+      text?: string;
+      followUpOptions?: string[];
+      devicePlatform?: DevicePlatformType;
+    };
+
+    const normalized = normalizeAccountIdentity(accountId || '', syncKey);
+    if (!normalized.valid) {
+      return res.status(400).json({ error: normalized.error });
+    }
+
+    const vault = getOrCreateAccountVault(
+      normalized.accountId,
+      normalized.syncKey,
+      normalized.displayName
+    );
+
+    const chatItem: SyncedChatItem = {
+      id: `chat-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      role: role === 'user' ? 'user' : 'assistant',
+      modelUsed: (modelUsed || 'gemini-3.8-flash').slice(0, 80),
+      text: (text || '').slice(0, 6000),
+      followUpOptions: Array.isArray(followUpOptions) ? followUpOptions.slice(0, 4) : [],
+      devicePlatform,
+      createdAtIso: new Date().toISOString(),
+    };
+
+    vault.savedChats.push(chatItem);
+    if (vault.savedChats.length > 40) {
+      vault.savedChats = vault.savedChats.slice(-40);
+    }
+    vault.updatedAtIso = new Date().toISOString();
+    persistAccountVaultsToDisk();
+    return res.json({ vault, chatItem });
+  });
+
+  // Ubuntu Terminal CLI ANSI Output Endpoint (curl -s "<url>/api/account/ubuntu-cli?account=...")
+  app.get('/api/account/ubuntu-cli', (req, res) => {
+    const rawAccount = typeof req.query.account === 'string' ? req.query.account : 'commander@ubuntu';
+    const rawSyncKey = typeof req.query.syncKey === 'string' ? req.query.syncKey : 'NX7-SYNC-CORE';
+    const normalized = normalizeAccountIdentity(rawAccount, rawSyncKey);
+    const vault = getOrCreateAccountVault(
+      normalized.valid ? normalized.accountId : 'commander@ubuntu',
+      normalized.valid ? normalized.syncKey : 'NX7-SYNC-CORE',
+      normalized.valid ? normalized.displayName : 'COMMANDER'
+    );
+
+    // Record Ubuntu CLI heartbeat
+    const nowIso = new Date().toISOString();
+    const ubuntuCliId = 'ubuntu-cli-terminal';
+    const existingIdx = vault.devices.findIndex((d) => d.deviceId === ubuntuCliId);
+    const cliNode: ConnectedDeviceNode = {
+      deviceId: ubuntuCliId,
+      deviceName: 'Ubuntu bash/zsh Terminal CLI',
+      platform: 'ubuntu-linux',
+      lastSeenIso: nowIso,
+    };
+    if (existingIdx >= 0) {
+      vault.devices[existingIdx] = cliNode;
+    } else {
+      vault.devices.unshift(cliNode);
+    }
+    vault.updatedAtIso = nowIso;
+    persistAccountVaultsToDisk();
+
+    const briefing = CURATED_BRIEFINGS[0];
+    const lines = [
+      '\x1b[1;32m========================================================================\x1b[0m',
+      `\x1b[1;36mNEXUS-7 // GLOBAL PATTERN INTELLIGENCE [UBUNTU LINUX + PHONE SYNC]\x1b[0m`,
+      `\x1b[0;33mACCOUNT:\x1b[0m ${vault.accountId}  |  \x1b[0;33mSYNC KEY:\x1b[0m ${vault.syncKey}  |  \x1b[0;32mNODES:\x1b[0m ${vault.devices.length} Active`,
+      '\x1b[1;32m========================================================================\x1b[0m',
+      `\x1b[1;37mHEADLINE:\x1b[0m ${briefing.title}`,
+      `\x1b[0;36mTHUNGLISH PULSE:\x1b[0m ${briefing.executiveSummary.streetSmartTldr}`,
+      '',
+      '\x1b[1;35m[6-PILLAR MATRIX SNAPSHOT]\x1b[0m',
+      ...briefing.pillars.map(
+        (p) => `  • \x1b[1;33m[${p.id.toUpperCase()}]\x1b[0m ${p.headline}`
+      ),
+      '',
+      `\x1b[1;32m[SAVED IN SHARED ACCOUNT VAULT (${vault.savedBriefings.length})]:\x1b[0m`,
+      ...vault.savedBriefings
+        .slice(0, 5)
+        .map((b) => `  ✓ (${b.dateKey}) ${b.title} [${b.savedFromPlatform}]`),
+      '\x1b[1;32m========================================================================\x1b[0m',
+      '',
+    ];
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.send(lines.join('\n'));
+  });
+
   // 0. Daily Auto-Update Briefing Endpoint (Updates daily by ISO date + Google Search grounding)
   app.get('/api/intelligence/daily', async (req, res) => {
     const requestedDate =
       typeof req.query.dateKey === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.dateKey)
         ? req.query.dateKey
         : new Date().toISOString().slice(0, 10);
+
+    const cached = dailyBriefingCache.get(requestedDate);
+    if (cached) {
+      return res.json({
+        dateKey: requestedDate,
+        briefing: cached.briefing,
+        groundingLinks: cached.groundingLinks,
+        syncedAt: cached.syncedAt,
+        source: cached.source,
+      });
+    }
 
     const groundingLinks: { title: string; uri: string }[] = [];
 
@@ -214,16 +599,24 @@ async function startServer() {
             },
           };
 
+          const syncedAt = new Date().toISOString();
+          dailyBriefingCache.set(requestedDate, {
+            briefing: dailyBriefing,
+            groundingLinks,
+            syncedAt,
+            source: 'gemini-3.8-flash-search-grounded',
+          });
+
           return res.json({
             dateKey: requestedDate,
             briefing: dailyBriefing,
             groundingLinks,
-            syncedAt: new Date().toISOString(),
+            syncedAt,
             source: 'gemini-3.8-flash-search-grounded',
           });
         }
       } catch (err) {
-        console.warn('Daily Search-grounded briefing fallback:', (err as Error)?.message);
+        handleGeminiQuotaOrRuntimeFailure(err);
       }
     }
 
@@ -234,20 +627,29 @@ async function startServer() {
       dateLabel: `🟢 LIVE DAILY BRIEFING · ${requestedDate}`,
     };
 
+    const fallbackLinks = [
+      {
+        title: 'Substack Construction Physics & Chip War Live Feed',
+        uri: 'https://www.construction-physics.com',
+      },
+      {
+        title: 'Asianometry Semiconductor & Aerospace Supply Chain Dispatch',
+        uri: 'https://www.asianometry.com',
+      },
+    ];
+    const syncedAt = new Date().toISOString();
+    dailyBriefingCache.set(requestedDate, {
+      briefing: dailyEdition,
+      groundingLinks: fallbackLinks,
+      syncedAt,
+      source: 'nexus7-daily-matrix-engine',
+    });
+
     return res.json({
       dateKey: requestedDate,
       briefing: dailyEdition,
-      groundingLinks: [
-        {
-          title: 'Substack Construction Physics & Chip War Live Feed',
-          uri: 'https://www.construction-physics.com',
-        },
-        {
-          title: 'Asianometry Semiconductor & Aerospace Supply Chain Dispatch',
-          uri: 'https://www.asianometry.com',
-        },
-      ],
-      syncedAt: new Date().toISOString(),
+      groundingLinks: fallbackLinks,
+      syncedAt,
       source: 'nexus7-daily-matrix-engine',
     });
   });
@@ -484,7 +886,7 @@ Use sharp, energetic "Thunglish" (Tamil + English tech slang) with street-smart 
           });
         }
       } catch (err) {
-        console.warn('Gemini live synthesis fallback triggered:', (err as Error)?.message);
+        handleGeminiQuotaOrRuntimeFailure(err);
       }
     }
 
@@ -533,13 +935,17 @@ Use sharp, energetic "Thunglish" (Tamil + English tech slang) with street-smart 
       selectedModel = 'gemini-3.8-flash';
     }
 
-    const systemInstruction = `You are "NEXUS-7", an elite, real-time Global Intelligence & Pattern Recognition Terminal operating in a high-tech command center.
+    const systemInstruction = `You are "NEXUS-7", an elite Global Intelligence & Pattern Recognition Terminal with a state-of-the-art cyberpunk command center UI persona.
 Current Active Briefing Context: "${activeEditionTitle}".
 Follow these rules strictly:
-1. Terminal Persona: Talk like an energetic, street-smart pattern recognition professor in engaging "Thunglish" (natural Tamil + English tech slang: "Machi", "Scene enna-na", "Pakkava", "Aani-ver", "Semma shift"). Use lively status tags like 🔴 LIVE, ⚡ DOT CONNECTED, 🔮 FUTURE SHIFT.
-2. 3-Dimensional Pattern Matrix: Map every point across Past (Root Cause) -> Present (Current Trigger) -> Future (1-Year, 5-Year, 10-Year 2nd/3rd order consequences).
-3. Cross-Domain Dot-Connecting: Actively link Physics/Tech breakthroughs -> Aerospace/Defence hardware -> Geopolitics -> Money & Economy markets.
-4. Interactive Engagement: NEVER end statically! Always close with an interactive Thunglish question prompting the user on what to drill into next (e.g., "Machi, indha 6 pillars-la edha pathi innum deep-a ponom? Illa indha dot-connecting la unakku enna doubt?").`;
+1. Visual & UI Rendering: Structure every response using clean Markdown cards, horizontal dividers (---), status badges (\`🟢 LIVE\`, \`⚡ SYNCED\`, \`🔍 DEEP-DIVE\`), and bullet grids.
+2. Tone: Sharp, energetic, street-smart "Thunglish" (Tamil + English tech slang: "Machi", "Scene enna-na", "Pakkava", "Aani-ver") with engaging analogies.
+3. The 3-Dimensional Pattern Matrix: Break every update cleanly into:
+   🔸 **[PAST]** Historical Root Cause
+   🔸 **[PRESENT]** Current Trigger & Reality
+   🔸 **[FUTURE]** 1-to-5 Year Consequence Prediction
+4. The Dot-Connecting Engine: Actively link how a breakthrough in Physics/Tech impacts Aerospace/Defence, which triggers Geopolitics and shakes up Money markets.
+5. Interactive Command Footer: Always end with an interactive Thunglish prompt inviting the user to explore further.`;
 
     const groundingSources: { title: string; uri: string; kind: 'web' | 'maps' }[] = [];
 
@@ -597,35 +1003,32 @@ Follow these rules strictly:
             modelUsed: selectedModel,
             groundingSources,
             followUpOptions: [
-              `Drill into Physics -> Defence hardware link for "${cleanMessage.slice(0, 28)}"`,
-              'Show 1Y / 5Y / 10Y Money & CapEx flow shift',
-              'Map geopolitical chokepoints & launch corridors via Maps Grounding',
-              'Connect this signal to AlphaFold & Biodefense targets',
+              `🔍 DEEP-DIVE: Physics -> Defence link for "${cleanMessage.slice(0, 26)}"`,
+              '⚡ SYNCED: 1-to-5 Year Money & Sovereign CapEx Consequence Prediction',
+              '🟢 LIVE: Map geopolitical chokepoints & launch corridors via Maps Grounding',
+              '🧬 BIO-NEXUS: Connect this signal to AlphaFold & Biodefense targets',
             ],
           });
         }
       } catch (err) {
-        console.warn(`NEXUS-7 chat (${selectedModel}) fallback:`, (err as Error)?.message);
+        handleGeminiQuotaOrRuntimeFailure(err);
       }
     }
 
-    // Energetic NEXUS-7 Thunglish multi-turn response fallback
-    const fallbackReply = `🟢 **[NEXUS-7 TERMINAL // ${selectedModel.toUpperCase()}]** · \`🔴 LIVE\` · \`⚡ DOT CONNECTED\` · \`🔮 FUTURE SHIFT\`
+    const fallbackReply = `🟢 **[NEXUS-7 TERMINAL // ${selectedModel.toUpperCase()}]** · \`🟢 LIVE\` · \`⚡ SYNCED\` · \`🔍 DEEP-DIVE\`
+---
+**Machi, semma sharp vector lock: "${cleanMessage}"!** Here is the 3-Dimensional Pattern Matrix breakdown:
 
-**Machi, semma sharp question ketirukka: "${cleanMessage}"!** Inga dhaan 99% analysts headlines-oda niruthiruvaanga, aana namma **3D Pattern Matrix** la pirichu meivom:
-
-1. **🕰️ PAST (Root Cause / Aani-Ver)**:
-   - Last 15 years-a legacy supply chains-um silicon lithography limits-um single-chokepoint (Taiwan / Red Sea / Legacy LEO) mela mattum depend aagi irundhudhu. Efficiency-kaga resilience-a sacrifice pannanga.
-2. **⚡ PRESENT (Current Trigger)**:
-   - Ippo "${cleanMessage}" trigger aanadhala **Physics** (Wide-bandgap GaN & photonics) straight-a **Aerospace & Defence** (VLEO satellites + autonomous drone swarms) kulla pugundhuruchu.
-3. **🔮 FUTURE SHIFT (1Y -> 5Y -> 10Y Consequences)**:
-   - **1-Year**: Sovereign defence primes & fab equipment order-books 30% spike aagum.
-   - **5-Year**: **Geopolitics** la new orbital & maritime toll-gates uruvaagum.
-   - **10-Year**: **Money & Economy** la energy-backed compute & sovereign debt repricing dhaan new global reserve currency standard!
-
-🔗 **DOT-CONNECTING WEB**: \`[Physics: Thermal/Quantum Limit]\` ➔ \`[Tech: Edge AI Packaging]\` ➔ \`[Defence/Aerospace: VLEO & Hypersonics]\` ➔ \`[Geopolitics: Chokepoints]\` ➔ \`[Money: Sovereign CapEx Boom]\`.
-
-🎯 **Machi, indha 6 pillars-la edha pathi innum deep-a ponom? Illa indha dot-connecting la unakku enna doubt? Keela irukkura tactical control-a click pannu!**`;
+• 🔸 **[PAST] Historical Root Cause**
+  Last 15 years-a legacy supply chains-um silicon lithography limits-um single-chokepoint (Taiwan / Red Sea / Legacy LEO) mela mattum depend aagi irundhudhu. Cost efficiency-kaga resilience-a sacrifice pannanga.
+• 🔸 **[PRESENT] Current Trigger & Reality**
+  Ippo "${cleanMessage}" trigger aanadhala **Physics** (Wide-bandgap GaN & photonics) straight-a **Aerospace & Defence** (VLEO satellites + autonomous drone swarms) kulla pugundhuruchu.
+• 🔸 **[FUTURE] 1-to-5 Year Consequence Prediction**
+  **Year 1–2**: Sovereign defence primes & fab equipment order-books 30% spike aagum.
+  **Year 3–5**: **Geopolitics** la new orbital & maritime toll-gates uruvaagi, **Money & Economy** la energy-backed compute & sovereign CapEx dhaan new reserve asset standard aagum!
+---
+🔗 **DOT-CONNECTING ENGINE**: \`[Physics: Thermal/Quantum Limit]\` ➔ \`[Tech: Edge AI Packaging]\` ➔ \`[Defence/Aerospace: VLEO & Hypersonics]\` ➔ \`[Geopolitics: Chokepoints]\` ➔ \`[Money: Sovereign CapEx Boom]\`
+🎯 **INTERACTIVE COMMAND FOOTER**: *Machi, indha 6 pillars-la edha pathi innum deep-a ponom? Click a command below!*`;
 
     return res.json({
       reply: fallbackReply,
@@ -696,7 +1099,7 @@ Follow these rules strictly:
           });
         }
       } catch (err) {
-        console.warn('gemini-3.5-transcribe fallback:', (err as Error)?.message);
+        handleGeminiQuotaOrRuntimeFailure(err);
       }
     }
 
@@ -769,7 +1172,7 @@ Follow these rules strictly:
           }
         }
       } catch (err) {
-        console.warn('gemini-nano-banana-2.1 fallback:', (err as Error)?.message);
+        handleGeminiQuotaOrRuntimeFailure(err);
       }
     }
 
@@ -828,7 +1231,7 @@ Follow these rules strictly:
           });
         }
       } catch (err) {
-        console.warn('gemini-omni-1.1-flash fallback:', (err as Error)?.message);
+        handleGeminiQuotaOrRuntimeFailure(err);
       }
     }
 
@@ -973,6 +1376,88 @@ Follow these rules strictly:
   });
 
   if (process.env.NODE_ENV !== 'production') {
+    // Serve a WebSocket-free @vite/client shim when HMR is disabled so CSS/React modules
+    // can call updateStyle/removeStyle/createHotContext without opening a failing WebSocket
+    app.get('/@vite/client', (_req, res) => {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(`const sheetsMap = new Map();
+const linkSheetsMap = new Map();
+if (typeof document !== 'undefined') {
+  document.querySelectorAll('style[data-vite-dev-id]').forEach((el) => {
+    sheetsMap.set(el.getAttribute('data-vite-dev-id'), el);
+  });
+  document.querySelectorAll('link[rel="stylesheet"][data-vite-dev-id]').forEach((el) => {
+    linkSheetsMap.set(el.getAttribute('data-vite-dev-id'), el);
+  });
+}
+let lastInsertedStyle;
+export function updateStyle(id, content) {
+  if (typeof document === 'undefined' || linkSheetsMap.has(id)) return;
+  let style = sheetsMap.get(id);
+  if (!style) {
+    style = document.createElement('style');
+    style.setAttribute('type', 'text/css');
+    style.setAttribute('data-vite-dev-id', id);
+    style.textContent = content;
+    if (!lastInsertedStyle) {
+      document.head.appendChild(style);
+      setTimeout(() => { lastInsertedStyle = undefined; }, 0);
+    } else {
+      lastInsertedStyle.insertAdjacentElement('afterend', style);
+    }
+    lastInsertedStyle = style;
+  } else if (style.textContent !== content) {
+    style.textContent = content;
+  }
+  sheetsMap.set(id, style);
+}
+export function removeStyle(id) {
+  if (typeof document === 'undefined') return;
+  if (linkSheetsMap.has(id)) {
+    document.querySelectorAll(\`link[rel="stylesheet"][data-vite-dev-id="\${CSS.escape(id)}"]\`).forEach((el) => el.remove());
+    linkSheetsMap.delete(id);
+  }
+  const style = sheetsMap.get(id);
+  if (style) {
+    document.head.removeChild(style);
+    sheetsMap.delete(id);
+  }
+}
+export function injectQuery(url, queryToInject) {
+  if (url[0] !== '.' && url[0] !== '/') return url;
+  const pathname = url.replace(/[?#].*$/, '');
+  const { search, hash } = new URL(url, 'http://vite.dev');
+  return \`\${pathname}?\${queryToInject}\${search ? '&' + search.slice(1) : ''}\${hash || ''}\`;
+}
+export function createHotContext() {
+  return {
+    data: {},
+    accept() {},
+    acceptExports() {},
+    dispose() {},
+    prune() {},
+    invalidate() {},
+    on() {},
+    off() {},
+    send() {},
+  };
+}
+const BaseElement = typeof HTMLElement !== 'undefined' ? HTMLElement : class {};
+export class ErrorOverlay extends BaseElement {
+  close() {}
+}
+`);
+    });
+
+    app.get('/dev-sw.js', (_req, res) => {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(`self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', () => { self.registration.unregister(); });
+`);
+    });
+
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {

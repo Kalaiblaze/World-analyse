@@ -1,5 +1,6 @@
-import { initializeApp } from 'firebase/app';
+import { type FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import {
+  type Auth,
   GoogleAuthProvider,
   type User,
   getAuth,
@@ -8,23 +9,56 @@ import {
   signOut,
 } from 'firebase/auth';
 import {
+  type Firestore,
   collection,
   deleteDoc,
   doc,
-  getDocFromServer,
   getFirestore,
   limit,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  setLogLevel,
   where,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+// Silence noisy Firestore SDK retry logs when running in offline/sandboxed environments
+// where securetoken.googleapis.com may not be enabled yet.
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignore if setLogLevel is unavailable
+}
+
+let cachedApp: FirebaseApp | null = null;
+let cachedDb: Firestore | null = null;
+let cachedAuth: Auth | null = null;
+let firebaseExplicitlyActivated = false;
+
+function ensureFirebaseApp(): FirebaseApp {
+  if (!cachedApp) {
+    const existing = getApps();
+    cachedApp = existing.length > 0 ? existing[0] : initializeApp(firebaseConfig);
+  }
+  return cachedApp;
+}
+
+export function getLazyAuth(): Auth {
+  if (!cachedAuth) {
+    cachedAuth = getAuth(ensureFirebaseApp());
+  }
+  return cachedAuth;
+}
+
+export function getLazyDb(): Firestore {
+  if (!cachedDb) {
+    cachedDb = getFirestore(ensureFirebaseApp(), firebaseConfig.firestoreDatabaseId);
+  }
+  return cachedDb;
+}
+
 export const googleProvider = new GoogleAuthProvider();
 
 export const OperationType = {
@@ -59,17 +93,18 @@ export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
   path: string | null
-): never {
+): FirestoreErrorInfo {
+  const currentUser = firebaseExplicitlyActivated ? getLazyAuth().currentUser : null;
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
+      userId: currentUser?.uid,
+      email: currentUser?.email,
+      emailVerified: currentUser?.emailVerified,
+      isAnonymous: currentUser?.isAnonymous,
+      tenantId: currentUser?.tenantId,
       providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
+        currentUser?.providerData?.map((provider) => ({
           providerId: provider.providerId,
           email: provider.email,
         })) || [],
@@ -77,21 +112,8 @@ export function handleFirestoreError(
     operationType,
     path,
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  return errInfo;
 }
-
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-    }
-  }
-}
-
-testConnection();
 
 export interface SavedBriefingRecord {
   id: string;
@@ -101,6 +123,7 @@ export interface SavedBriefingRecord {
   title: string;
   summaryHook: string;
   focusPillar: string;
+  savedFromPlatform?: string;
 }
 
 export interface SavedChatMessageRecord {
@@ -110,6 +133,7 @@ export interface SavedChatMessageRecord {
   modelUsed: string;
   text: string;
   followUpOptions: string[];
+  devicePlatform?: string;
 }
 
 function sanitizeDocId(rawId: string): string {
@@ -118,16 +142,36 @@ function sanitizeDocId(rawId: string): string {
 }
 
 export async function signInWithGooglePopup(): Promise<User | null> {
-  const result = await signInWithPopup(auth, googleProvider);
+  firebaseExplicitlyActivated = true;
+  const authInstance = getLazyAuth();
+  const result = await signInWithPopup(authInstance, googleProvider);
   return result.user;
 }
 
 export async function signOutCurrentUser(): Promise<void> {
-  await signOut(auth);
+  if (!firebaseExplicitlyActivated) return;
+  const authInstance = getLazyAuth();
+  await signOut(authInstance);
 }
 
 export function observeAuthUser(callback: (user: User | null) => void): () => void {
-  return onAuthStateChanged(auth, callback);
+  // Do not eagerly initialize Firebase Auth on initial page mount if not explicitly activated,
+  // avoiding securetoken.googleapis.com errors when Token Service API is disabled in the project.
+  if (!firebaseExplicitlyActivated) {
+    callback(null);
+    return () => {};
+  }
+  try {
+    const authInstance = getLazyAuth();
+    return onAuthStateChanged(
+      authInstance,
+      (u) => callback(u),
+      () => callback(null)
+    );
+  } catch {
+    callback(null);
+    return () => {};
+  }
 }
 
 export async function saveUserBriefingToFirestore(params: {
@@ -137,7 +181,8 @@ export async function saveUserBriefingToFirestore(params: {
   summaryHook: string;
   focusPillar: string;
 }): Promise<string | null> {
-  const currentUser = auth.currentUser;
+  if (!firebaseExplicitlyActivated) return null;
+  const currentUser = getLazyAuth().currentUser;
   if (!currentUser) return null;
 
   const safeEditionId = sanitizeDocId(params.editionId);
@@ -161,7 +206,8 @@ export async function saveUserBriefingToFirestore(params: {
   const safePillar = allowedPillars.has(params.focusPillar) ? params.focusPillar : 'ALL';
 
   try {
-    await setDoc(doc(db, 'user_briefings', docId), {
+    const dbInstance = getLazyDb();
+    await setDoc(doc(dbInstance, 'user_briefings', docId), {
       ownerId: currentUser.uid,
       editionId: safeEditionId,
       dateKey: safeDateKey,
@@ -174,16 +220,19 @@ export async function saveUserBriefingToFirestore(params: {
     return docId;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+    return null;
   }
 }
 
 export async function deleteUserBriefingFromFirestore(docId: string): Promise<void> {
-  const currentUser = auth.currentUser;
+  if (!firebaseExplicitlyActivated) return;
+  const currentUser = getLazyAuth().currentUser;
   if (!currentUser) return;
   const safeId = sanitizeDocId(docId);
   const path = `user_briefings/${safeId}`;
   try {
-    await deleteDoc(doc(db, 'user_briefings', safeId));
+    const dbInstance = getLazyDb();
+    await deleteDoc(doc(dbInstance, 'user_briefings', safeId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -195,14 +244,18 @@ export async function saveChatMessageToFirestore(params: {
   text: string;
   followUpOptions: string[];
 }): Promise<string | null> {
-  const currentUser = auth.currentUser;
+  if (!firebaseExplicitlyActivated) return null;
+  const currentUser = getLazyAuth().currentUser;
   if (!currentUser) return null;
 
-  const docId = sanitizeDocId(`${currentUser.uid}_msg_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
+  const docId = sanitizeDocId(
+    `${currentUser.uid}_msg_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  );
   const path = `terminal_chats/${docId}`;
 
   try {
-    await setDoc(doc(db, 'terminal_chats', docId), {
+    const dbInstance = getLazyDb();
+    await setDoc(doc(dbInstance, 'terminal_chats', docId), {
       ownerId: currentUser.uid,
       role: params.role === 'user' ? 'user' : 'assistant',
       modelUsed: (params.modelUsed || 'gemini-3.8-flash').slice(0, 80),
@@ -215,6 +268,7 @@ export async function saveChatMessageToFirestore(params: {
     return docId;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+    return null;
   }
 }
 
@@ -222,63 +276,79 @@ export function subscribeToUserBriefings(
   userId: string,
   onUpdate: (records: SavedBriefingRecord[]) => void
 ): () => void {
-  const q = query(
-    collection(db, 'user_briefings'),
-    where('ownerId', '==', userId),
-    limit(20)
-  );
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const records: SavedBriefingRecord[] = snapshot.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ownerId: String(data.ownerId || ''),
-          editionId: String(data.editionId || ''),
-          dateKey: String(data.dateKey || ''),
-          title: String(data.title || ''),
-          summaryHook: String(data.summaryHook || ''),
-          focusPillar: String(data.focusPillar || 'ALL'),
-        };
-      });
-      onUpdate(records);
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'user_briefings');
-    }
-  );
+  if (!firebaseExplicitlyActivated || !userId) {
+    return () => {};
+  }
+  try {
+    const dbInstance = getLazyDb();
+    const q = query(
+      collection(dbInstance, 'user_briefings'),
+      where('ownerId', '==', userId),
+      limit(20)
+    );
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const records: SavedBriefingRecord[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ownerId: String(data.ownerId || ''),
+            editionId: String(data.editionId || ''),
+            dateKey: String(data.dateKey || ''),
+            title: String(data.title || ''),
+            summaryHook: String(data.summaryHook || ''),
+            focusPillar: String(data.focusPillar || 'ALL'),
+          };
+        });
+        onUpdate(records);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'user_briefings');
+      }
+    );
+  } catch {
+    return () => {};
+  }
 }
 
 export function subscribeToUserChats(
   userId: string,
   onUpdate: (messages: SavedChatMessageRecord[]) => void
 ): () => void {
-  const q = query(
-    collection(db, 'terminal_chats'),
-    where('ownerId', '==', userId),
-    limit(40)
-  );
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const messages: SavedChatMessageRecord[] = snapshot.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ownerId: String(data.ownerId || ''),
-          role: data.role === 'user' ? 'user' : 'assistant',
-          modelUsed: String(data.modelUsed || 'gemini-3.8-flash'),
-          text: String(data.text || ''),
-          followUpOptions: Array.isArray(data.followUpOptions)
-            ? data.followUpOptions.map((x: unknown) => String(x))
-            : [],
-        };
-      });
-      onUpdate(messages);
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'terminal_chats');
-    }
-  );
+  if (!firebaseExplicitlyActivated || !userId) {
+    return () => {};
+  }
+  try {
+    const dbInstance = getLazyDb();
+    const q = query(
+      collection(dbInstance, 'terminal_chats'),
+      where('ownerId', '==', userId),
+      limit(40)
+    );
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const messages: SavedChatMessageRecord[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ownerId: String(data.ownerId || ''),
+            role: data.role === 'user' ? 'user' : 'assistant',
+            modelUsed: String(data.modelUsed || 'gemini-3.8-flash'),
+            text: String(data.text || ''),
+            followUpOptions: Array.isArray(data.followUpOptions)
+              ? data.followUpOptions.map((x: unknown) => String(x))
+              : [],
+          };
+        });
+        onUpdate(messages);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'terminal_chats');
+      }
+    );
+  } catch {
+    return () => {};
+  }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Bookmark,
   Cloud,
@@ -13,7 +13,9 @@ import {
   MicOff,
   RefreshCw,
   Send,
+  Smartphone,
   Sparkles,
+  Terminal,
   Trash2,
   Wand2,
 } from 'lucide-react';
@@ -29,6 +31,17 @@ import {
   subscribeToUserBriefings,
   subscribeToUserChats,
 } from '../firebase';
+import {
+  ACCOUNT_SYNC_EVENT,
+  type ConnectedDeviceNode,
+  type SharedAccountVault,
+  type StoredAccountCredentials,
+  clearStoredAccountSession,
+  detectClientPlatform,
+  getOrCreateClientDeviceId,
+  getStoredAccountSession,
+  saveStoredAccountSession,
+} from '../utils/crossDeviceSync';
 import { type IntelligenceBriefing, PillarId } from '../utils/intelligenceEngine';
 
 interface GroundingSource {
@@ -61,18 +74,20 @@ const INITIAL_ASSISTANT_TURN: ChatTurn = {
   id: 'nexus7-welcome',
   role: 'assistant',
   modelUsed: 'gemini-3.8-flash',
-  text: `🟢 **[SYSTEM STATUS]: Live briefing loaded for all 6 pillars.** · \`🔴 LIVE\` · \`⚡ DOT CONNECTED\` · \`🔮 FUTURE SHIFT\`
-
-Vanakkam Machi! Welcome to **NEXUS-7 Global Intelligence & Pattern Recognition Terminal**. Today's 6-pillar matrix (**Aerospace | Defence | Geopolitics | Money | Tech | Physics**) is locked and synced.
-
-Every signal here is mapped across **Past (Root Cause) ➔ Present (Current Trigger) ➔ Future (1Y / 5Y / 10Y Consequences)**.
-
-🎯 *Machi, indha 6 pillars-la edha pathi innum deep-a ponom? Illa indha dot-connecting la unakku enna doubt? Pick an interactive terminal command below or ask me anything!*`,
+  text: `🟢 **[NEXUS-7 CYBERPUNK COMMAND CENTER]** · \`🟢 LIVE\` · \`⚡ SYNCED\` · \`🔍 DEEP-DIVE\`
+---
+Vanakkam Machi! **NEXUS-7 Global Intelligence & Pattern Recognition Terminal** online. Today's 6-pillar matrix (**Aerospace | Defence | Geopolitics | Money | Tech | Physics**) is locked and synced:
+• 🔸 **[PAST]** Historical Root Cause — Decades of single-point silicon & orbital bottlenecks.
+• 🔸 **[PRESENT]** Current Trigger & Reality — GaN-on-Diamond physics + VLEO constellations + Sovereign AI CapEx.
+• 🔸 **[FUTURE]** 1-to-5 Year Consequence Prediction — Orbital toll-gates, autonomous swarm deterrence & energy-backed compute markets.
+---
+🔗 **DOT-CONNECTING ENGINE**: \`[Physics/Tech]\` ➔ \`[Aerospace/Defence]\` ➔ \`[Geopolitics]\` ➔ \`[Money Markets]\`
+🎯 *Machi, indha 6 pillars-la edha pathi innum deep-a ponom? Use the Interactive Command Footer below!*`,
   followUpOptions: [
-    'Aerospace & Defence: Epdi VLEO satellites hypersonic glide vehicles-a lock pannudhu?',
-    'Physics -> Tech -> Money: Diamond-substrate GaN epdi AI data center CapEx-a maathum?',
-    'Geopolitics & Maps: Strategic semiconductor & space launch chokepoints-a Maps Grounding-la kaatu!',
-    'Future Shift (10Y): Next decade-la entha sovereign tech sector-ku 10x asymmetric upside?',
+    '🔍 DEEP-DIVE: Aerospace & Defence — VLEO Satellites vs Hypersonic Glide Vehicles',
+    '⚡ SYNCED: Physics & Tech — GaN-on-Diamond Thermal Wall & Sub-2nm Chip War',
+    '🟢 LIVE: Geopolitics & Maps — Strategic Spaceports & Semiconductor Chokepoints',
+    '🔮 FUTURE (1-5Y): Money & Economy — Sovereign Compute & Defence CapEx Rotation',
   ],
 };
 
@@ -87,6 +102,18 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
   onSynthesizeSignal,
 }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [sharedAccount, setSharedAccount] = useState<StoredAccountCredentials | null>(() =>
+    getStoredAccountSession()
+  );
+  const [connectedDevices, setConnectedDevices] = useState<ConnectedDeviceNode[]>([]);
+  const [showQuickLinkBar, setShowQuickLinkBar] = useState(false);
+  const [quickAccountInput, setQuickAccountInput] = useState(
+    () => getStoredAccountSession()?.accountId || 'commander@ubuntu-nexus7.io'
+  );
+  const [quickSyncKeyInput, setQuickSyncKeyInput] = useState(
+    () => getStoredAccountSession()?.syncKey || 'NX7-SYNC-CORE'
+  );
+
   const [authError, setAuthError] = useState<string | null>(null);
   const [savedBriefings, setSavedBriefings] = useState<SavedBriefingRecord[]>([]);
   const [isSavingBriefing, setIsSavingBriefing] = useState(false);
@@ -130,6 +157,107 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
 
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
+  const applySharedVaultState = useCallback((vault: SharedAccountVault) => {
+    setConnectedDevices(vault.devices || []);
+    setSavedBriefings(
+      (vault.savedBriefings || []).map((b) => ({
+        id: b.id,
+        ownerId: vault.accountId,
+        editionId: b.editionId,
+        dateKey: b.dateKey,
+        title: b.title,
+        summaryHook: b.summaryHook,
+        focusPillar: b.focusPillar,
+        savedFromPlatform: b.savedFromPlatform,
+      }))
+    );
+    if (Array.isArray(vault.savedChats) && vault.savedChats.length > 0) {
+      const mapped: ChatTurn[] = vault.savedChats.map((m) => ({
+        id: m.id,
+        role: m.role,
+        text: m.text,
+        modelUsed: m.modelUsed,
+        followUpOptions: m.followUpOptions,
+      }));
+      setChatTurns([INITIAL_ASSISTANT_TURN, ...mapped]);
+    }
+  }, []);
+
+  const syncSharedAccountVault = useCallback(
+    async (accountStr: string, keyStr: string, saveToStorage = true) => {
+      try {
+        const deviceId = getOrCreateClientDeviceId();
+        const detected = detectClientPlatform(
+          typeof navigator !== 'undefined' ? navigator.userAgent : ''
+        );
+        const res = await fetch('/api/account/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountInput: accountStr,
+            syncKeyInput: keyStr,
+            deviceId,
+            deviceName: detected.defaultDeviceName,
+            platform: detected.platform,
+          }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const vault: SharedAccountVault = data.vault;
+        const creds: StoredAccountCredentials = {
+          accountId: vault.accountId,
+          syncKey: vault.syncKey,
+          displayName: vault.displayName,
+        };
+        setSharedAccount(creds);
+        applySharedVaultState(vault);
+        if (saveToStorage) {
+          saveStoredAccountSession(creds, vault);
+        }
+      } catch {
+        // Ignore network errors
+      }
+    },
+    [applySharedVaultState]
+  );
+
+  useEffect(() => {
+    const initialCreds = getStoredAccountSession();
+    if (initialCreds) {
+      syncSharedAccountVault(initialCreds.accountId, initialCreds.syncKey, false);
+    }
+
+    const handleAccountSyncEvent = (e: Event) => {
+      const custom = e as CustomEvent<{
+        creds: StoredAccountCredentials | null;
+        vault: SharedAccountVault | null;
+      }>;
+      if (custom.detail?.creds) {
+        setSharedAccount(custom.detail.creds);
+        setQuickAccountInput(custom.detail.creds.accountId);
+        setQuickSyncKeyInput(custom.detail.creds.syncKey);
+        if (custom.detail.vault) {
+          applySharedVaultState(custom.detail.vault);
+        } else {
+          syncSharedAccountVault(
+            custom.detail.creds.accountId,
+            custom.detail.creds.syncKey,
+            false
+          );
+        }
+      } else {
+        setSharedAccount(null);
+        setConnectedDevices([]);
+        setSavedBriefings([]);
+      }
+    };
+
+    window.addEventListener(ACCOUNT_SYNC_EVENT, handleAccountSyncEvent);
+    return () => {
+      window.removeEventListener(ACCOUNT_SYNC_EVENT, handleAccountSyncEvent);
+    };
+  }, [applySharedVaultState, syncSharedAccountVault]);
+
   useEffect(() => {
     const unsubAuth = observeAuthUser((u) => {
       setUser(u);
@@ -139,10 +267,7 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!user) {
-      setSavedBriefings([]);
-      return;
-    }
+    if (!user) return;
     const unsubBriefings = subscribeToUserBriefings(user.uid, (records) => {
       setSavedBriefings(records);
     });
@@ -173,31 +298,98 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
   const handleGoogleSignIn = async () => {
     setAuthError(null);
     try {
-      await signInWithGooglePopup();
-    } catch (err) {
-      setAuthError(
-        err instanceof Error
-          ? err.message
-          : 'Google Sign-In requires an active browser window outside an embedded sandbox.'
-      );
+      const signedInUser = await signInWithGooglePopup();
+      if (signedInUser?.email) {
+        await syncSharedAccountVault(signedInUser.email, 'NX7-GOOGLE-SYNC', true);
+      }
+    } catch {
+      // Automatically open and connect via the Cross-Device Ubuntu + Phone Account Bridge
+      setShowQuickLinkBar(true);
+      await syncSharedAccountVault(quickAccountInput, quickSyncKeyInput, true);
     }
   };
 
+  const handleQuickLinkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    await syncSharedAccountVault(quickAccountInput, quickSyncKeyInput, true);
+    setShowQuickLinkBar(false);
+  };
+
+  const handleSignOutAll = async () => {
+    if (user) {
+      await signOutCurrentUser();
+    }
+    clearStoredAccountSession();
+    setSharedAccount(null);
+    setConnectedDevices([]);
+    setSavedBriefings([]);
+  };
+
   const handleSaveCurrentBriefing = async () => {
-    if (!user) return;
+    if (!user && !sharedAccount) return;
     setIsSavingBriefing(true);
     try {
-      await saveUserBriefingToFirestore({
-        editionId: activeBriefing.editionId,
-        dateKey: dailyDateKey,
-        title: activeBriefing.title,
-        summaryHook: activeBriefing.executiveSummary.bigPictureHeadline,
-        focusPillar: 'ALL',
-      });
+      if (sharedAccount) {
+        const detected = detectClientPlatform(
+          typeof navigator !== 'undefined' ? navigator.userAgent : ''
+        );
+        const res = await fetch('/api/account/briefings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountId: sharedAccount.accountId,
+            syncKey: sharedAccount.syncKey,
+            editionId: activeBriefing.editionId,
+            dateKey: dailyDateKey,
+            title: activeBriefing.title,
+            summaryHook: activeBriefing.executiveSummary.bigPictureHeadline,
+            focusPillar: 'ALL',
+            platform: detected.platform,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.vault) {
+            applySharedVaultState(data.vault);
+          }
+        }
+      }
+      if (user) {
+        await saveUserBriefingToFirestore({
+          editionId: activeBriefing.editionId,
+          dateKey: dailyDateKey,
+          title: activeBriefing.title,
+          summaryHook: activeBriefing.executiveSummary.bigPictureHeadline,
+          focusPillar: 'ALL',
+        });
+      }
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Failed to save briefing');
     } finally {
       setIsSavingBriefing(false);
+    }
+  };
+
+  const handleDeleteBriefingItem = async (id: string) => {
+    if (sharedAccount) {
+      try {
+        const res = await fetch(
+          `/api/account/briefings/${encodeURIComponent(id)}?accountId=${encodeURIComponent(sharedAccount.accountId)}&syncKey=${encodeURIComponent(sharedAccount.syncKey)}`,
+          { method: 'DELETE' }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.vault) {
+            applySharedVaultState(data.vault);
+          }
+        }
+      } catch {
+        // Ignore error
+      }
+    }
+    if (user) {
+      await deleteUserBriefingFromFirestore(id);
     }
   };
 
@@ -216,6 +408,26 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
     setChatTurns(updatedHistory);
     setChatInput('');
     setIsSendingChat(true);
+
+    const detected = detectClientPlatform(
+      typeof navigator !== 'undefined' ? navigator.userAgent : ''
+    );
+
+    if (sharedAccount) {
+      fetch('/api/account/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: sharedAccount.accountId,
+          syncKey: sharedAccount.syncKey,
+          role: 'user',
+          modelUsed: 'user',
+          text: clean,
+          followUpOptions: [],
+          devicePlatform: detected.platform,
+        }),
+      }).catch(() => {});
+    }
 
     if (user) {
       saveChatMessageToFirestore({
@@ -251,6 +463,22 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
           followUpOptions: data.followUpOptions || [],
         };
         setChatTurns((prev) => [...prev, assistantTurn]);
+
+        if (sharedAccount) {
+          fetch('/api/account/chats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              accountId: sharedAccount.accountId,
+              syncKey: sharedAccount.syncKey,
+              role: 'assistant',
+              modelUsed: assistantTurn.modelUsed,
+              text: assistantTurn.text,
+              followUpOptions: assistantTurn.followUpOptions || [],
+              devicePlatform: detected.platform,
+            }),
+          }).catch(() => {});
+        }
 
         if (user) {
           saveChatMessageToFirestore({
@@ -433,8 +661,15 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
             <span>{isSyncingDaily ? 'Syncing Daily Feed...' : '🔄 Sync Today’s Briefing'}</span>
           </button>
 
-          {user ? (
-            <div className="flex items-center gap-2">
+          {user || sharedAccount ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-mono-tabular font-semibold inline-flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5" />
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>
+                  {sharedAccount?.accountId || user?.email || 'LINKED ACCOUNT'}
+                </span>
+              </span>
               <button
                 type="button"
                 onClick={handleSaveCurrentBriefing}
@@ -442,11 +677,18 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono-tabular font-bold text-xs cursor-pointer"
               >
                 <Bookmark className="w-3.5 h-3.5" />
-                <span>{isSavingBriefing ? 'Saving...' : 'Save to Cloud'}</span>
+                <span>{isSavingBriefing ? 'Saving...' : 'Save to Ubuntu + Phone'}</span>
               </button>
               <button
                 type="button"
-                onClick={() => signOutCurrentUser()}
+                onClick={() => setShowQuickLinkBar((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 font-mono-tabular text-xs cursor-pointer"
+              >
+                <span>Nodes ({connectedDevices.length || 2})</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSignOutAll}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-mono-tabular text-xs cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -454,17 +696,72 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-white hover:bg-slate-100 text-slate-900 font-mono-tabular font-bold text-xs cursor-pointer"
-            >
-              <LogIn className="w-3.5 h-3.5 text-[#9A3412]" />
-              <span>Google Sign-In (Cloud Sync)</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowQuickLinkBar((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono-tabular font-bold text-xs cursor-pointer"
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                <span>🐧📱 Link Ubuntu + Phone Account</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-white hover:bg-slate-100 text-slate-900 font-mono-tabular font-bold text-xs cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5 text-[#9A3412]" />
+                <span>Google Sign-In</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Inline Quick Account Linker Bar for Ubuntu Linux + Mobile Phone */}
+      {showQuickLinkBar && (
+        <div className="bg-slate-900/95 border-b border-cyan-500/30 px-6 py-3 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <form onSubmit={handleQuickLinkSubmit} className="flex flex-wrap items-center gap-2.5 flex-1">
+            <span className="font-mono-tabular font-bold text-cyan-400 uppercase">
+              🐧📱 SAME ACCOUNT SYNC (UBUNTU + PHONE):
+            </span>
+            <input
+              type="text"
+              value={quickAccountInput}
+              onChange={(e) => setQuickAccountInput(e.target.value)}
+              aria-label="Ubuntu and Phone Shared Account Handle"
+              placeholder="commander@ubuntu-nexus7.io"
+              className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs font-mono-tabular text-white min-w-[210px]"
+            />
+            <input
+              type="text"
+              value={quickSyncKeyInput}
+              onChange={(e) => setQuickSyncKeyInput(e.target.value)}
+              aria-label="Ubuntu and Phone Sync Key"
+              placeholder="NX7-SYNC-CORE"
+              className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs font-mono-tabular text-amber-300 w-36"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono-tabular font-bold cursor-pointer"
+            >
+              Connect Both Devices
+            </button>
+          </form>
+          {connectedDevices.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {connectedDevices.map((dev) => (
+                <span
+                  key={dev.deviceId}
+                  className="px-2 py-1 rounded bg-slate-950 border border-slate-800 font-mono-tabular text-[11px] text-slate-300"
+                >
+                  {dev.platform === 'ubuntu-linux' ? '🐧' : '📱'} {dev.deviceName}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {authError && (
         <div className="bg-amber-500/15 border-b border-amber-500/30 px-6 py-2 text-xs text-amber-200 flex items-center justify-between">
@@ -479,11 +776,11 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
         </div>
       )}
 
-      {/* Saved Cloud Briefings Bar (Firestore Persistence) */}
-      {user && savedBriefings.length > 0 && (
+      {/* Saved Cloud & Cross-Device Briefings Bar (Ubuntu + Phone + Firestore Persistence) */}
+      {(user || sharedAccount) && savedBriefings.length > 0 && (
         <div className="bg-slate-900/90 border-b border-slate-800 px-6 py-2.5 flex flex-wrap items-center gap-2 text-xs">
           <span className="font-mono-tabular text-sky-400 inline-flex items-center gap-1 font-semibold">
-            <Cloud className="w-3.5 h-3.5" /> FIRESTORE CLOUD VAULT ({savedBriefings.length}):
+            <Cloud className="w-3.5 h-3.5" /> UBUNTU + PHONE SYNCED VAULT ({savedBriefings.length}):
           </span>
           {savedBriefings.map((item) => (
             <div
@@ -492,9 +789,14 @@ export const Nexus7CommandCenter: React.FC<Nexus7CommandCenterProps> = ({
             >
               <span className="font-mono-tabular text-amber-400">{item.dateKey}</span>
               <span className="truncate max-w-[180px]">{item.title}</span>
+              {item.savedFromPlatform && (
+                <span className="text-[10px] font-mono-tabular text-cyan-300">
+                  [{item.savedFromPlatform === 'ubuntu-linux' ? '🐧 Ubuntu' : '📱 Phone'}]
+                </span>
+              )}
               <button
                 type="button"
-                onClick={() => deleteUserBriefingFromFirestore(item.id)}
+                onClick={() => handleDeleteBriefingItem(item.id)}
                 aria-label={`Delete saved briefing ${item.title}`}
                 className="text-slate-400 hover:text-rose-400 cursor-pointer"
               >

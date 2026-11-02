@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXUS-7 // Global Pattern Intelligence</title>
+  <!-- Google Fonts: Space Grotesk, Plus Jakarta Sans, JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --font-display: 'Space Grotesk', sans-serif;
+      --font-sans: 'Plus Jakarta Sans', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --nexus-bg: #07090E;
+      --nexus-bg-gradient: radial-gradient(circle at 18% 12%, rgba(56, 189, 248, 0.07), transparent 45%), radial-gradient(circle at 82% 24%, rgba(139, 92, 246, 0.06), transparent 48%);
+      --nexus-surface: rgba(255, 255, 255, 0.03);
+      --nexus-border: rgba(255, 255, 255, 0.08);
+      --nexus-text-primary: #F8FAFC;
+      --nexus-accent: #38BDF8;
+    }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--nexus-bg);
+      background-image: var(--nexus-bg-gradient);
+      color: var(--nexus-text-primary);
+      line-height: 1.65;
+      transition: background-color 240ms ease, color 240ms ease;
+    }
+    h1, h2, h3, .font-display {
+      font-family: var(--font-display);
+      letter-spacing: -0.03em;
+    }
+    .font-mono-meta {
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body class="min-h-screen selection:bg-cyan-500/20 selection:text-cyan-300">
+  <div class="max-w-[1360px] mx-auto px-4 sm:px-8 py-6 space-y-6">
+    <!-- Top Live Telemetry Bar -->
+    <header class="bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-4 lg:px-6 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="font-display font-bold text-lg text-white tracking-tight">NEXUS-7 // Global Pattern Intelligence</span>
+        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-mono-meta">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          LIVE
+        </span>
+        <span id="live-clock" class="px-3 py-1 rounded-md bg-white/[0.04] border border-white/[0.08] text-slate-300 text-xs font-mono-meta">00:00:00 UTC</span>
+      </div>
+      <div id="pillar-filters" class="flex flex-wrap items-center gap-1.5"></div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btn-theme-toggle" class="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-cyan-500/40 text-xs font-mono-meta text-cyan-300 cursor-pointer transition-all">
+          🌙 Theme: Obsidian Night
+        </button>
+        <button id="btn-connect-dots" class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.08] hover:border-cyan-500/40 text-xs font-mono-meta text-slate-200 cursor-pointer transition-all">
+          ⚡ Connect All Dots
+        </button>
+        <button id="btn-simulate-feed" class="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-violet-500 text-slate-950 font-mono-meta font-bold text-xs cursor-pointer transition-all">
+          🔄 Simulate New Live Intelligence Feed
+        </button>
+      </div>
+    </header>
+
+    <!-- Hero Master Pattern Synthesis Banner -->
+    <section id="hero-banner" class="bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] hover:border-cyan-500/40 transition-all duration-300 rounded-2xl p-6 lg:p-8"></section>
+
+    <!-- 6-Pillar Interactive Bento Grid -->
+    <section id="bento-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"></section>
+  </div>
+
+  <!-- Deep-Dive Duda & Hart Side-Drawer -->
+  <div id="deep-dive-drawer" class="fixed inset-0 z-50 hidden justify-end bg-black/75 backdrop-blur-sm">
+    <div id="drawer-content" class="w-full max-w-2xl bg-[#07090E] border-l border-white/[0.12] h-full overflow-y-auto p-6 lg:p-8 space-y-6"></div>
+  </div>
+
+  <script>
+    const DOMAIN_COLORS = {
+      "Aerospace": { hex: "#38BDF8", bg: "rgba(56,189,248,0.12)", border: "rgba(56,189,248,0.4)" },
+      "Defence": { hex: "#F43F5E", bg: "rgba(244,63,94,0.12)", border: "rgba(244,63,94,0.4)" },
+      "Geopolitics": { hex: "#F59E0B", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.4)" },
+      "Money & Economy": { hex: "#10B981", bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.4)" },
+      "Technology": { hex: "#8B5CF6", bg: "rgba(139,92,246,0.12)", border: "rgba(139,92,246,0.4)" },
+      "Physics": { hex: "#D946EF", bg: "rgba(217,70,239,0.12)", border: "rgba(217,70,239,0.4)" }
+    };
+
+    const SCENARIOS = [
+      {
+        title: "Diamond-Substrate GaN, 265km VLEO Hypersonic Tracking & The $418B Sovereign CapEx Pivot",
+        hook: "Machi, Physics lab-la nadandha 2.1nm diamond heat-sink miracle ippo Pentagon VLEO radar doctrine-ayum Wall Street semiconductor valuation-ayum ore naal-la ulukki irukku!",
+        tldr: "Bonding Gallium Nitride directly onto CVD Diamond wafers triples radar power in vacuum without liquid cooling—unlocking 265km VLEO hypersonic tracking and a $418B industrial CapEx boom.",
+        pillars: [
+          {
+            id: "Physics", metric: "1,850 W/m·K", headline: "Direct-Bonded GaN-on-Diamond Eliminates Kapitza Thermal Resistance",
+            hook: "Atom-ku atom-eh diamond kooda weld panna heat resistance zero aagidum!",
+            past: "Legacy GaN-on-SiC trapped acoustic phonons in a thick transition buffer layer.",
+            present: "150mm surface-activated bonding achieves a 2.1nm phonon bridge with 3x RF power density.",
+            future: "5-Yr Projection: 6G base stations and orbital AI blades cut cooling power by 28%.",
+            connected: ["Technology", "Aerospace", "Defence"],
+            analogy: "Like demolishing a narrow toll-gate on Kathipara flyover so heat traffic zips out at 1,850 W/m·K.",
+            features: ["x1: Phonon bridge = 2.1 nm", "x2: Thermal conductivity = 1,850 W/m·K", "x3: CW RF Power = 3.1x"],
+            rule: "g(x) = k_diamond / R_Kapitza > theta_phonon => Structural Solid-State Regime Shift"
+          },
+          {
+            id: "Technology", metric: "14.2 ms Edge AI", headline: "Radiation-Hardened 3D Chiplets Bring Sub-15ms Target Inference to Orbit",
+            hook: "Raw video-va ground station-ku anuppama satellite-kullaye AI brain vechu target lock!",
+            past: "Satellites acted as dumb bent-pipes waiting hours to downlink raw SAR data.",
+            present: "Diamond-cooled 3D chiplets run SAR ship-wake classification in orbit in 14.2 ms (99.4% compression).",
+            future: "5-Yr Projection: Direct satellite-to-cockpit targeting packets bypass ground fiber hubs.",
+            connected: ["Physics", "Aerospace", "Money & Economy"],
+            analogy: "Putting a genius detective inside the CCTV camera instead of mailing hard drives to headquarters.",
+            features: ["x1: Inference latency = 14.2 ms", "x2: Compression = 99.4%", "x3: Rad-hard SEU = 10^-9"],
+            rule: "g(x) = (Latency_Ground / Latency_Orbit) * Compression > 1000 => Edge Singularity"
+          },
+          {
+            id: "Aerospace", metric: "265 km VLEO", headline: "Atmosphere-Breathing Hall Thrusters Sustain Permanent 265km VLEO Flight",
+            hook: "Petrol bunk illama kaathula irukira molecules-aye scoop panni parakkura satellite!",
+            past: "Below 300km, atmospheric drag de-orbited satellites within months once Xenon gas ran out.",
+            present: "Air-breathing electric thrusters ionize residual N2/O2 to stay at 265km with +12.4 dB radar SNR.",
+            future: "5-Yr Projection: VLEO becomes the primary orbital highway for sub-10cm optical & radar custody.",
+            connected: ["Physics", "Defence", "Geopolitics"],
+            analogy: "Scooping thin upper-atmosphere air like a turbofan jet so the satellite never runs out of propellant.",
+            features: ["x1: Altitude = 265 km", "x2: Radar SNR gain = +12.4 dB", "x3: Xenon mass = 0 kg"],
+            rule: "g(x) = SNR_Gain + Isp_eff - Drag_Decay > theta_vleo => Permanent VLEO Regime"
+          },
+          {
+            id: "Defence", metric: "94.8% Custody", headline: "Space-Based Bistatic VLEO Radar Defeats Mach-8 Hypersonic Glide Stealth",
+            hook: "Mela irundhu floodlight adicha எந்த stealth glider-um maraiya mudiyaadhu!",
+            past: "Earth's curvature blinded ground radars to mid-course maneuvering hypersonic gliders.",
+            present: "265km VLEO illumination + unmanned wingman receivers achieve 94.8% mid-course track lock.",
+            future: "5-Yr Projection: 18% of naval patrol budgets shift from crewed planes to VLEO + drone meshes.",
+            connected: ["Aerospace", "Technology", "Geopolitics"],
+            analogy: "Shining a stadium floodlight straight down from the ceiling onto a stealth intruder.",
+            features: ["x1: Track custody = 94.8%", "x2: Top-down RCS = +18 dBsm", "x3: Cost ratio = 1:14"],
+            rule: "g(x) = P(Lock) * (Cost_Target / Cost_Interceptor) > 10 => Deterrence Inversion"
+          },
+          {
+            id: "Geopolitics", metric: "38% CVD Share", headline: "Equatorial Launch Corridors & Synthetic Diamond Reactor Alliances",
+            hook: "CVD Diamond reactors + Equatorial launchpads dhaan 2026-oda pudhu Strait of Hormuz!",
+            past: "Export controls focused only on silicon EUV scanners while ignoring wide-bandgap substrates.",
+            present: "38% of microwave plasma CVD diamond reactors are now governed by US-Japan-India pacts.",
+            future: "5-Yr Projection: Equatorial spaceports (Sriharikota/Kulasekarapattinam) gain massive leverage.",
+            connected: ["Aerospace", "Defence", "Money & Economy"],
+            analogy: "Controlling the oven that bakes the diamond wafer and the equatorial highway to low orbit.",
+            features: ["x1: Controlled reactor share = 38%", "x2: Equatorial delta-v bonus = +14.6%", "x3: Laser bypass = 47%"],
+            rule: "g(x) = Substrate_Control * Launch_Access > theta_sovereign => Chokepoint Shift"
+          },
+          {
+            id: "Money & Economy", metric: "$418.4B CapEx", headline: "Sovereign Wealth Rotates $418.4B From Pure SaaS Into Hard-Tech Foundries",
+            hook: "AI code eludha aarambichadhum Wall Street kaasu thirumba factories & wafers-ku odudhu!",
+            past: "Zero-rate decade rewarded asset-light software while starving physical foundries and grid hardware.",
+            present: "Foundry EV/EBITDA multiples (22.4x) flip above legacy SaaS (14.8x) on $418.4B sovereign inflows.",
+            future: "5-Yr Projection: Tier-2 wafer polishing (CMP) and HVDC transformer makers lead market returns.",
+            connected: ["Physics", "Technology", "Geopolitics"],
+            analogy: "When gold miners flood the town, the guy selling diamond-tipped picks makes the guaranteed fortune.",
+            features: ["x1: Foundry vs SaaS multiple = 22.4x vs 14.8x", "x2: CapEx flow = $418.4B", "x3: Book-to-bill = 1.42x"],
+            rule: "g(x) = (Foundry_Multiple - SaaS_Multiple) + BookToBill > 1.35 => Hard-Tech Supercycle"
+          }
+        ]
+      },
+      {
+        title: "22-Tesla REBCO Superconducting Tape, Compact Naval Fusion & Copper Grid Bypass",
+        hook: "Machi, fusion lab-kulla irundha 22-Tesla superconducting tape ippo datacenter power grid-ayum submarine propulsion-ayum தலைகீழா maathudhu!",
+        tldr: "Nanoscale Hafnium-doped REBCO superconducting ribbons cross 16,500 km/yr manufacturing scale—slashing rare-earth Dysprosium dependence by 94%.",
+        pillars: [
+          {
+            id: "Physics", metric: "22.4 Tesla", headline: "Hafnium-Pinned REBCO Superconducting Tape Eliminates Flux-Creep Quench",
+            hook: "Zero resistance-la 22-Tesla magnetic field—copper wire-a vida 150x current density!",
+            past: "High-temp superconductors quenched unpredictably under mechanical stress in high magnetic fields.",
+            present: "Nanoscale Hafnium-oxide pinning centers sustain 22.4 Tesla at 20K liquid hydrogen/neon temperatures.",
+            future: "5-Yr Projection: Compact tokamaks and lossless DC datacenter busbars reach commercial deployment.",
+            connected: ["Technology", "Defence", "Money & Economy"],
+            analogy: "Turning a bumpy village mud road into a frictionless maglev track for electrons.",
+            features: ["x1: Field strength = 22.4 T", "x2: Current density = 150x Cu", "x3: Operating temp = 20-77K"],
+            rule: "g(x) = J_c(B,T) / Cost_per_kA_m > theta_grid => Superconducting Breakout"
+          },
+          {
+            id: "Technology", metric: "16,500 km/yr", headline: "Roll-to-Roll IBAD Laser Deposition Scales Superconducting Ribbon Output",
+            hook: "Lab curiosity-a irundha tape ippo newspaper printing press maadhiri roll-to-roll-a varudhu!",
+            past: "PLD deposition produced only short, expensive meter-long strips for research labs.",
+            present: "Multi-beam laser deposition hits 16,500 km/yr yield with automated AI defect inspection.",
+            future: "5-Yr Projection: 1.2 GW AI datacenters replace 40-ton copper transformers with cryogenic DC rails.",
+            connected: ["Physics", "Aerospace", "Money & Economy"],
+            analogy: "Moving from hand-written palm manuscripts to high-speed rotary printing presses.",
+            features: ["x1: Annual output = 16,500 km", "x2: Yield = 96.4%", "x3: Footprint reduction = -78%"],
+            rule: "g(x) = Output_km * Yield > 15000 => Industrial Scale Crossover"
+          },
+          {
+            id: "Aerospace", metric: "18 MW/kg", headline: "Cryo-Electric Megawatt推進 (Propulsion) for High-Altitude Airframes",
+            hook: "Jet fuel-eh illama liquid hydrogen + superconducting motor vechu zero-thermal-signature flight!",
+            past: "Electric aircraft were limited by heavy copper windings and battery energy density.",
+            present: "Liquid-hydrogen cooled REBCO motors achieve 18 MW power output at one-fifth the weight of turbines.",
+            future: "5-Yr Projection: Stratospheric endurance platforms fly 14 days continuously with near-zero IR signature.",
+            connected: ["Physics", "Defence", "Technology"],
+            analogy: "Using cold liquid hydrogen both as fuel and as the coolant that makes the motor superconducting.",
+            features: ["x1: Specific power = 18 MW/kg", "x2: Motor efficiency = 99.2%", "x3: IR signature = -85%"],
+            rule: "g(x) = Power_to_Weight > 15 kW/kg => Cryo-Aviation Viability"
+          },
+          {
+            id: "Defence", metric: "< 38 dB Acoustic", headline: "Rim-Driven Superconducting Magnetohydrodynamic Naval Quiet Drives",
+            hook: "Submarine-la gearbox-eh கிடையாது—ocean sonar-ku verum kadal alai satham mattum dhaan kekkum!",
+            past: "Mechanical reduction gears were the primary acoustic giveaway of nuclear and diesel submarines.",
+            present: "Shaftless rim-driven REBCO propulsion drops radiated underwater noise below 38 dB ambient sea state.",
+            future: "5-Yr Projection: Quantum magnetometers (SQUIDs) replace legacy passive sonar arrays for ASW.",
+            connected: ["Physics", "Aerospace", "Geopolitics"],
+            analogy: "Replacing a clanking bicycle chain with silent magnetic levitation underwater.",
+            features: ["x1: Acoustic signature < 38 dB", "x2: Moving gear parts = 0", "x3: Torque density = +280%"],
+            rule: "g(x) = Ambient_Sea_Noise - Vessel_dB > 0 => Acoustic Invisibility"
+          },
+          {
+            id: "Geopolitics", metric: "-94% Dysprosium", headline: "Rare-Earth Magnet Bypass Breaks the Heavy Rare-Earth Monopoly",
+            hook: "Dysprosium & Neodymium monopoly-a superconducting Hastelloy steel tape vechu udachitaanga!",
+            past: "Wind turbines, EVs, and naval motors depended 90%+ on refined heavy rare earths from a single supply chain.",
+            present: "REBCO tape uses stainless steel and trace yttrium/barium, cutting heavy rare-earth imports by 94%.",
+            future: "5-Yr Projection: Critical mineral diplomacy pivots from Neodymium mines to Helium/Neon cryo-gases.",
+            connected: ["Defence", "Money & Economy", "Physics"],
+            analogy: "Switching from scarce imported fuel to abundant local steel and nitrogen.",
+            features: ["x1: Dysprosium reduction = -94%", "x2: Supply chain independence = 88%", "x3: Tariff insulation = High"],
+            rule: "g(x) = 1 - RareEarth_Dependency > 0.85 => Mineral Sovereignty"
+          },
+          {
+            id: "Money & Economy", metric: "$190B Grid Boom", headline: "Hyperscaler Grid Bottlenecks Trigger $190B Cryogenic Power Spine Arbitrage",
+            hook: "40-month transformer waiting list-a bypass panna hyperscalers superconducting cable-la kaasu kotturaanga!",
+            past: "Grain-oriented electrical steel shortages delayed gigawatt AI datacenter interconnects by 3–4 years.",
+            present: "$190B in private infrastructure credit flows into superconducting DC microgrids and compact fusion PPAs.",
+            future: "5-Yr Projection: Industrial cryo-cooler and Hastelloy substrate suppliers re-rate as AI power picks.",
+            connected: ["Technology", "Geopolitics", "Physics"],
+            analogy: "Building a private VIP expressway when the public highway is jammed for 40 months.",
+            features: ["x1: Grid capex = $190B", "x2: Right-of-way width = -80%", "x3: Transmission loss = <0.5%"],
+            rule: "g(x) = Datacenter_Delay_Cost - Superconducting_CapEx > 0 => Grid Bypass Boom"
+          }
+        ]
+      }
+    ];
+
+    let currentScenarioIdx = 0;
+    let activePillarFilter = "ALL";
+    let connectAllDots = false;
+    let highlightedPillars = [];
+    const cardTabs = {};
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("live-clock").textContent = now.toISOString().slice(11, 19) + " UTC";
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    function renderAll() {
+      const scenario = SCENARIOS[currentScenarioIdx];
+      renderFilters();
+      renderHero(scenario);
+      renderGrid(scenario);
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    function renderFilters() {
+      const container = document.getElementById("pillar-filters");
+      const pillars = ["ALL", ...Object.keys(DOMAIN_COLORS)];
+      container.innerHTML = pillars.map(p => {
+        const isActive = activePillarFilter === p;
+        const cfg = DOMAIN_COLORS[p] || { hex: "#38BDF8", bg: "rgba(56,189,248,0.15)", border: "#38BDF8" };
+        return `<button onclick="setPillarFilter('${p}')" style="border-color:${isActive ? cfg.hex : 'rgba(255,255,255,0.08)'};background:${isActive ? cfg.bg : 'rgba(255,255,255,0.02)'};color:${isActive ? cfg.hex : '#94A3B8'}" class="px-2.5 py-1 rounded-lg text-[11px] font-mono-meta border cursor-pointer transition-all">${p === 'ALL' ? 'ALL 6 PILLARS' : p}</button>`;
+      }).join("");
+    }
+
+    function renderHero(scenario) {
+      const hero = document.getElementById("hero-banner");
+      hero.innerHTML = `
+        <div class="space-y-3">
+          <div class="text-xs font-mono-meta text-cyan-400">MASTER PATTERN SYNTHESIS // SCENARIO ${currentScenarioIdx + 1} OF ${SCENARIOS.length}</div>
+          <h1 class="font-display text-2xl sm:text-3xl lg:text-4xl font-bold text-white">${scenario.title}</h1>
+          <p class="text-sm sm:text-base text-cyan-300 font-medium">“${scenario.hook}”</p>
+          <p class="text-xs sm:text-sm text-slate-300">${scenario.tldr}</p>
+        </div>
+      `;
+    }
+
+    function renderGrid(scenario) {
+      const grid = document.getElementById("bento-grid");
+      const items = activePillarFilter === "ALL" ? scenario.pillars : scenario.pillars.filter(p => p.id === activePillarFilter);
+      grid.innerHTML = items.map(p => {
+        const cfg = DOMAIN_COLORS[p.id];
+        const tab = cardTabs[p.id] || "PRESENT";
+        const isHighlighted = connectAllDots || highlightedPillars.includes(p.id);
+        const tabContent = tab === "PAST" ? p.past : tab === "FUTURE" ? p.future : p.present;
+        return `
+          <article style="border-color:${isHighlighted ? cfg.hex : 'rgba(255,255,255,0.08)'};box-shadow:${isHighlighted ? '0 0 28px -4px ' + cfg.hex : 'none'}" class="bg-white/[0.03] backdrop-blur-xl border hover:border-cyan-500/40 transition-all duration-300 hover:-translate-y-1 rounded-2xl p-6 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between gap-2 mb-4">
+                <span style="background:${cfg.bg};border-color:${cfg.border};color:${cfg.hex}" class="px-3 py-1 rounded-md border text-xs font-mono-meta">${p.id}</span>
+                <span class="text-xs font-mono-meta text-slate-400">${p.metric}</span>
+              </div>
+              <h2 onclick="openDrawer('${p.id}')" class="font-display text-xl font-bold text-white mb-2 cursor-pointer hover:text-cyan-300">${p.headline}</h2>
+              <p class="text-xs text-slate-300 italic mb-4">“${p.hook}”</p>
+              <div class="grid grid-cols-3 gap-1 p-1 rounded-xl bg-black/40 border border-white/[0.08] mb-4">
+                ${["PAST", "PRESENT", "FUTURE"].map(t => `
+                  <button onclick="switchTab('${p.id}','${t}')" style="background:${tab === t ? cfg.bg : 'transparent'};color:${tab === t ? cfg.hex : '#94A3B8'}" class="py-1.5 px-2 rounded-lg text-[10px] font-mono-meta cursor-pointer">${t === 'PAST' ? 'PAST: Root' : t === 'PRESENT' ? 'PRESENT: Trigger' : 'FUTURE: 5-Yr'}</button>
+                `).join("")}
+              </div>
+              <div class="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs text-slate-200 min-h-[96px]">
+                <strong style="color:${cfg.hex}" class="block font-mono-meta mb-1">🔸 [${tab}]</strong>
+                ${tabContent}
+              </div>
+            </div>
+            <div class="mt-5 pt-4 border-t border-white/[0.08] space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="text-[10px] font-mono-meta text-slate-400">🔗 CONNECTED DOTS:</span>
+                <div class="flex flex-wrap gap-1.5">
+                  ${p.connected.map(c => `<button onclick="highlightDots('${p.id}')" style="color:${DOMAIN_COLORS[c].hex};border-color:${DOMAIN_COLORS[c].border}" class="px-2 py-0.5 rounded text-[10px] font-mono-meta border bg-white/[0.02] cursor-pointer">⚡ ${c}</button>`).join("")}
+                </div>
+              </div>
+              <button onclick="openDrawer('${p.id}')" class="w-full py-2 px-3 rounded-xl bg-white/[0.04] hover:bg-cyan-500/15 border border-white/[0.08] text-xs font-mono-meta text-cyan-300 cursor-pointer">🔍 Inspect Duda & Hart Pattern Breakdown →</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    window.setPillarFilter = (p) => { activePillarFilter = p; renderAll(); };
+    window.switchTab = (id, tab) => { cardTabs[id] = tab; renderAll(); };
+    window.highlightDots = (id) => {
+      const p = SCENARIOS[currentScenarioIdx].pillars.find(x => x.id === id);
+      highlightedPillars = p ? [p.id, ...p.connected] : [];
+      renderAll();
+    };
+    window.openDrawer = (id) => {
+      const p = SCENARIOS[currentScenarioIdx].pillars.find(x => x.id === id);
+      if (!p) return;
+      const cfg = DOMAIN_COLORS[p.id];
+      const drawer = document.getElementById("deep-dive-drawer");
+      const content = document.getElementById("drawer-content");
+      content.innerHTML = `
+        <div class="flex items-start justify-between gap-4 pb-4 border-b border-white/[0.1]">
+          <div>
+            <span style="color:${cfg.hex}" class="text-xs font-mono-meta">${p.id} // DUDA & HART PATTERN BREAKDOWN</span>
+            <h2 class="font-display text-2xl font-bold text-white mt-1">${p.headline}</h2>
+          </div>
+          <button onclick="closeDrawer()" class="px-3 py-1.5 rounded-lg bg-white/[0.06] text-xs font-mono-meta text-white cursor-pointer">✕ Close</button>
+        </div>
+        <div class="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-2">
+          <div class="text-xs font-mono-meta text-amber-400">01. CORE CONCEPT ANALOGY (THUNGLISH)</div>
+          <p class="text-sm text-cyan-300">“${p.hook}”</p>
+          <p class="text-xs text-slate-300">${p.analogy}</p>
+        </div>
+        <div class="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-2">
+          <div class="text-xs font-mono-meta text-cyan-400">02. FEATURE EXTRACTION VECTOR x</div>
+          <ul class="space-y-1.5 text-xs font-mono-meta text-slate-200">${p.features.map(f => `<li class="p-2 rounded bg-black/40">${f}</li>`).join("")}</ul>
+        </div>
+        <div class="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-2">
+          <div class="text-xs font-mono-meta text-fuchsia-400">03. DECISION RULE g(x)</div>
+          <div class="p-3 rounded bg-black/50 text-xs font-mono-meta text-fuchsia-200">${p.rule}</div>
+        </div>
+        <div class="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-2 text-xs text-slate-200">
+          <div class="font-mono-meta text-emerald-400">04. FUTURE VERDICT (5-YR PROJECTION)</div>
+          <p>${p.future}</p>
+        </div>
+      `;
+      drawer.classList.remove("hidden");
+      drawer.classList.add("flex");
+    };
+    window.closeDrawer = () => {
+      const drawer = document.getElementById("deep-dive-drawer");
+      drawer.classList.add("hidden");
+      drawer.classList.remove("flex");
+    };
+
+    let currentTheme = "obsidian-night";
+    const THEME_VARS = {
+      "obsidian-night": {
+        "--nexus-bg": "#07090E",
+        "--nexus-bg-gradient": "radial-gradient(circle at 18% 12%, rgba(56, 189, 248, 0.07), transparent 45%), radial-gradient(circle at 82% 24%, rgba(139, 92, 246, 0.06), transparent 48%)",
+        "--nexus-surface": "rgba(255, 255, 255, 0.03)",
+        "--nexus-border": "rgba(255, 255, 255, 0.08)",
+        "--nexus-text-primary": "#F8FAFC",
+        "--nexus-accent": "#38BDF8"
+      },
+      "terminal-green": {
+        "--nexus-bg": "#020A04",
+        "--nexus-bg-gradient": "radial-gradient(circle at 18% 14%, rgba(0, 255, 102, 0.14), transparent 46%), radial-gradient(circle at 82% 24%, rgba(16, 185, 129, 0.12), transparent 50%)",
+        "--nexus-surface": "rgba(0, 255, 102, 0.055)",
+        "--nexus-border": "rgba(0, 255, 102, 0.34)",
+        "--nexus-text-primary": "#E2FFE9",
+        "--nexus-accent": "#00FF66"
+      }
+    };
+
+    document.getElementById("btn-theme-toggle").addEventListener("click", (e) => {
+      currentTheme = currentTheme === "obsidian-night" ? "terminal-green" : "obsidian-night";
+      const root = document.documentElement;
+      root.setAttribute("data-theme", currentTheme);
+      Object.entries(THEME_VARS[currentTheme]).forEach(([k, v]) => root.style.setProperty(k, v));
+      e.currentTarget.textContent = currentTheme === "terminal-green" ? "📟 Theme: Terminal Green" : "🌙 Theme: Obsidian Night";
+    });
+
+    document.getElementById("btn-connect-dots").addEventListener("click", () => {
+      connectAllDots = !connectAllDots;
+      renderAll();
+    });
+    document.getElementById("btn-simulate-feed").addEventListener("click", () => {
+      currentScenarioIdx = (currentScenarioIdx + 1) % SCENARIOS.length;
+      highlightedPillars = [];
+      renderAll();
+    });
+
+    renderAll();
+  </script>
+</body>
+</html>
